@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  ADMIN
+  BARBER
+}
+
+enum QueueStatus {
+  WAITING
+  IN_SERVICE
+  FINISHED
+  CANCELLED
+}
+
+enum InventoryStatus {
+  NORMAL
+  LOW
+  CRITICAL
+}
+
+enum AppointmentServiceType {
+  CORTE
+  BARBA
+  COMBO
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum InventoryMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  passwordHash  String
+  role          UserRole
+  avatarUrl     String?
+  refreshTokens RefreshToken[]
+  appointments  Appointment[]  @relation("BarberAppointments")
+  queueEntries   QueueEntry[]  @relation("BarberQueue")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  tokenHash  String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+model Client {
+  id             String         @id @default(cuid())
+  name           String
+  email          String?
+  phone          String
+  notes          String?
+  whatsappOptIn  Boolean        @default(false)
+  isActive       Boolean        @default(true)
+  totalSpent     Decimal        @default(0) @db.Decimal(10, 2)
+  lastVisitAt    DateTime?
+  appointments   Appointment[]
+  queueEntries   QueueEntry[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Appointment {
+  id              String                 @id @default(cuid())
+  clientId        String
+  barberId        String
+  serviceType     AppointmentServiceType
+  scheduledAt     DateTime
+  endTime         DateTime
+  estimatedMinutes Int
+  price           Decimal                @db.Decimal(10, 2)
+  status          AppointmentStatus      @default(SCHEDULED)
+  notes           String?
+  client          Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  barber          User                   @relation("BarberAppointments", fields: [barberId], references: [id], onDelete: Restrict)
+  queueEntry      QueueEntry?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([barberId, scheduledAt, endTime])
+}
+
+model QueueEntry {
+  id               String       @id @default(cuid())
+  clientId         String
+  barberId         String?
+  appointmentId    String?      @unique
+  status           QueueStatus  @default(WAITING)
+  estimatedMinutes Int
+  serviceType      AppointmentServiceType
+  serviceDuration  Int
+  paidAmount       Decimal?     @db.Decimal(10, 2)
+  scheduledFor     DateTime     @default(now())
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  position         Int
+  serviceLabel     String
+  client           Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  barber           User?        @relation("BarberQueue", fields: [barberId], references: [id], onDelete: SetNull)
+  appointment      Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([status, position])
+}
+
+model InventoryItem {
+  id              String          @id @default(cuid())
+  name            String
+  sku             String          @unique
+  category        String
+  quantity        Int
+  unit            String          @default("unid.")
+  costPrice       Decimal         @db.Decimal(10, 2)
+  salePrice       Decimal         @db.Decimal(10, 2)
+  lowStockAlert   Int             @default(10)
+  criticalAlert   Int             @default(3)
+  status          InventoryStatus @default(NORMAL)
+  isActive        Boolean         @default(true)
+  movements       InventoryMovement[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model InventoryMovement {
+  id              String                @id @default(cuid())
+  inventoryItemId String
+  type            InventoryMovementType
+  quantity        Int
+  previousQuantity Int
+  nextQuantity    Int
+  reason          String?
+  item            InventoryItem         @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  createdAt       DateTime              @default(now())
+}
