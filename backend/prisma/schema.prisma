@@ -15,6 +15,7 @@ enum UserRole {
 
 enum QueueStatus {
   WAITING
+  CALLED
   IN_SERVICE
   FINISHED
   CANCELLED
@@ -115,6 +116,7 @@ model QueueEntry {
   serviceDuration  Int
   paidAmount       Decimal?     @db.Decimal(10, 2)
   scheduledFor     DateTime     @default(now())
+  calledAt         DateTime?
   startedAt        DateTime?
   finishedAt       DateTime?
   position         Int
@@ -142,6 +144,7 @@ model InventoryItem {
   status          InventoryStatus @default(NORMAL)
   isActive        Boolean         @default(true)
   movements       InventoryMovement[]
+  productSales    ProductSale[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -156,4 +159,17 @@ model InventoryMovement {
   reason          String?
   item            InventoryItem         @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
   createdAt       DateTime              @default(now())
+}
+
+model ProductSale {
+  id              String        @id @default(cuid())
+  inventoryItemId String
+  quantity        Int
+  unitPrice       Decimal       @db.Decimal(10, 2)
+  totalPrice      Decimal       @db.Decimal(10, 2)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  createdAt       DateTime      @default(now())
+
+  @@index([createdAt])
+  @@index([inventoryItemId])
 }

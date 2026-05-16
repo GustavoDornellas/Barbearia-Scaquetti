@@ -9,7 +9,7 @@ export function Button({ className, variant = "primary", ...props }: ButtonProps
   return (
     <button
       className={clsx(
-        "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition",
+        "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
         {
           "bg-gold text-[#1d1710] hover:bg-sand": variant === "primary",
           "border border-border bg-panelSoft text-text hover:border-gold/50": variant === "secondary",
@@ -21,4 +21,3 @@ export function Button({ className, variant = "primary", ...props }: ButtonProps
     />
   );
 }
-

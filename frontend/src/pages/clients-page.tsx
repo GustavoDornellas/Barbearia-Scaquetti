@@ -24,6 +24,25 @@ const emptyForm = {
   whatsappOptIn: true
 };
 
+function getPhoneDigits(value: string) {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
+function formatBrazilianMobilePhone(value: string) {
+  const digits = getPhoneDigits(value);
+  if (digits.length <= 2) return digits;
+
+  const areaCode = digits.slice(0, 2);
+  const number = digits.slice(2);
+  if (number.length <= 5) return `(${areaCode}) ${number}`;
+
+  return `(${areaCode}) ${number.slice(0, 5)}-${number.slice(5)}`;
+}
+
+function isValidBrazilianMobilePhone(value: string) {
+  return /^[1-9]{2}9\d{8}$/.test(getPhoneDigits(value));
+}
+
 export function ClientsPage() {
   const notify = useToastStore((state) => state.notify);
   const [clients, setClients] = useState<Client[]>([]);
@@ -65,7 +84,7 @@ export function ClientsPage() {
         ? {
             name: client.name,
             email: "",
-            phone: client.phone,
+            phone: formatBrazilianMobilePhone(client.phone),
             notes: client.notes ?? "",
             whatsappOptIn: true
           }
@@ -79,14 +98,14 @@ export function ClientsPage() {
       notify("Informe o nome do cliente.", "error");
       return;
     }
-    if (form.phone.replace(/\D/g, "").length < 10) {
-      notify("Informe um telefone valido com DDD.", "error");
+    if (!isValidBrazilianMobilePhone(form.phone)) {
+      notify("Informe um celular com DDD, 9 e mais 8 numeros.", "error");
       return;
     }
     setSaving(true);
     const payload = {
       name: form.name,
-      phone: form.phone,
+      phone: getPhoneDigits(form.phone),
       notes: form.notes,
       email: "",
       whatsappOptIn: true
@@ -170,7 +189,7 @@ export function ClientsPage() {
                 <div className="font-semibold">{client.name}</div>
                 <div className="mt-1 text-xs text-muted">Cliente cadastrado</div>
               </div>
-              <div className="text-muted">{client.phone}</div>
+              <div className="text-muted">{formatBrazilianMobilePhone(client.phone)}</div>
               <div className="text-muted">{client.lastVisitAt ? new Date(client.lastVisitAt).toLocaleDateString("pt-BR") : "Sem visitas"}</div>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={() => startEdit(client)}>Editar</Button>
@@ -196,7 +215,15 @@ export function ClientsPage() {
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nome" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-gold" />
-            <input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="Telefone" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-gold" />
+            <input
+              value={form.phone}
+              onChange={(event) => setForm({ ...form, phone: formatBrazilianMobilePhone(event.target.value) })}
+              inputMode="numeric"
+              autoComplete="tel"
+              maxLength={15}
+              placeholder="(11) 99999-9999"
+              className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-gold"
+            />
             <textarea
               value={form.notes}
               onChange={(event) => setForm({ ...form, notes: event.target.value })}

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { InventoryMovementType, InventoryStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../database/prisma/prisma.service";
 import { z } from "zod";
@@ -9,7 +9,7 @@ type InventoryMovementInput = z.infer<typeof inventoryMovementSchema>;
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list() {
     const items = await this.prisma.inventoryItem.findMany({
@@ -101,6 +101,7 @@ export class InventoryService {
 
       const nextQuantity = this.calculateNextQuantity(item.quantity, payload);
       if (nextQuantity < 0) throw new BadRequestException("Quantidade nao pode ficar negativa");
+      const saleTotal = Number(item.salePrice) * payload.quantity;
 
       return tx.inventoryItem.update({
         where: { id },
@@ -115,7 +116,16 @@ export class InventoryService {
               nextQuantity,
               reason: payload.reason
             }
-          }
+          },
+          productSales: payload.type === InventoryMovementType.OUT
+            ? {
+                create: {
+                  quantity: payload.quantity,
+                  unitPrice: item.salePrice,
+                  totalPrice: saleTotal
+                }
+              }
+            : undefined
         },
         include: { movements: { orderBy: { createdAt: "desc" } } }
       });

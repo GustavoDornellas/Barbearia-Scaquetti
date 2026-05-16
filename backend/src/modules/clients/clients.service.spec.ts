@@ -1,25 +1,58 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ClientsService } from "./clients.service";
 
 describe("ClientsService", () => {
   it("creates client without classification", async () => {
-    const prisma = {
+    const tx = {
       client: {
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({ id: "client-1" })
       }
     };
+    const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
     const service = new ClientsService(prisma as never);
 
     await service.create({ name: "Gustavo", email: "", phone: "(11) 99999-9999", whatsappOptIn: true });
 
-    expect(prisma.client.create).toHaveBeenCalledWith({
+    expect(tx.client.create).toHaveBeenCalledWith({
       data: {
         name: "Gustavo",
         email: null,
-        phone: "(11) 99999-9999",
-        whatsappOptIn: true
+        phone: "11999999999",
+        whatsappOptIn: true,
+        notes: null
       }
     });
+  });
+
+  it("blocks duplicated active client by normalized phone", async () => {
+    const tx = {
+      client: {
+        findMany: jest.fn().mockResolvedValue([{ id: "client-1", phone: "(11) 99999-9999", email: null }]),
+        create: jest.fn()
+      }
+    };
+    const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
+    const service = new ClientsService(prisma as never);
+
+    await expect(service.create({ name: "Gustavo", email: "", phone: "11 99999-9999", whatsappOptIn: true }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.client.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-mobile phone numbers", async () => {
+    const tx = {
+      client: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn()
+      }
+    };
+    const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
+    const service = new ClientsService(prisma as never);
+
+    await expect(service.create({ name: "Gustavo", email: "", phone: "1133334444", whatsappOptIn: true }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("throws NotFoundException when client detail does not exist", async () => {

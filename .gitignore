@@ -1,14 +1,59 @@
+# Dependencies
 node_modules
+**/node_modules
+
+# Build outputs
 dist
+build
+**/dist
+**/build
+coverage
+
+# Environment variables
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.example
-.DS_Store
-coverage
+!**/.env.example
+
+# Logs
+logs
+**/logs
 *.log
-*.tsbuildinfo
-backend/node_modules
-backend/dist
-frontend/node_modules
-frontend/dist
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Prisma local/cache
+.prisma
+**/.prisma
 backend/prisma/dev.db
+
+# Temporary/cache files
+tmp
+temp
+.cache
+**/tmp
+**/temp
+**/.cache
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor
+.vscode
+.idea
+**/.vscode
+**/.idea
+
+# Deployment/local tooling
+.vercel
+.render
+**/.vercel
+**/.render
+
+# Mobile build outputs
+android/app/build

@@ -10,7 +10,7 @@ export const queueSchema = z.object({
 });
 
 export const queueStatusSchema = z.object({
-  status: z.enum(["WAITING", "IN_SERVICE", "CANCELLED"])
+  status: z.enum(["WAITING", "CANCELLED"])
 });
 
 export const finishQueueSchema = z.object({

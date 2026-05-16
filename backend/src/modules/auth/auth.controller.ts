@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Inject, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { loginSchema } from "./auth.schemas";
@@ -10,7 +10,7 @@ import { SkipThrottle, Throttle } from "@nestjs/throttler";
 
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @Throttle({ default: { limit: 10, ttl: 60000, blockDuration: 30000 } })
   @Post("login")

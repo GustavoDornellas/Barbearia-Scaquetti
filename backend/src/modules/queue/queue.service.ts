@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AppointmentServiceType, AppointmentStatus, Prisma, QueueStatus, UserRole } from "@prisma/client";
 import { PrismaService } from "../../database/prisma/prisma.service";
 import { z } from "zod";
@@ -7,26 +7,22 @@ import { getTodayRangeInBrazil } from "../../shared/utils/date-range";
 
 type QueueInput = z.infer<typeof queueSchema>;
 type FinishQueueInput = z.infer<typeof finishQueueSchema>;
+type QueueEntryWithRelations = Prisma.QueueEntryGetPayload<{ include: { client: true; barber: true } }>;
 
-const activeStatuses: QueueStatus[] = [QueueStatus.WAITING, QueueStatus.IN_SERVICE];
+const activeStatuses: QueueStatus[] = [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE];
 
 @Injectable()
 export class QueueService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list() {
     const todayRange = getTodayRangeInBrazil();
 
-    const [items, lastFinished, finishedToday, appointmentsToday] = await Promise.all([
+    const [items, finishedToday, appointmentsToday, productSalesToday] = await Promise.all([
       this.prisma.queueEntry.findMany({
-        where: { status: { in: [QueueStatus.WAITING, QueueStatus.IN_SERVICE] } },
+        where: { status: { in: activeStatuses } },
         include: { client: true, barber: true },
         orderBy: [{ position: "asc" }, { scheduledFor: "asc" }]
-      }),
-      this.prisma.queueEntry.findFirst({
-        where: { status: QueueStatus.FINISHED },
-        include: { client: true, barber: true },
-        orderBy: { finishedAt: "desc" }
       }),
       this.prisma.queueEntry.count({
         where: {
@@ -40,26 +36,32 @@ export class QueueService {
           endTime: { gte: todayRange.start, lt: todayRange.end }
         },
         _sum: { price: true }
+      }),
+      this.prisma.productSale.aggregate({
+        where: {
+          createdAt: { gte: todayRange.start, lt: todayRange.end }
+        },
+        _sum: { totalPrice: true }
       })
     ]);
 
-    const visibleItems = lastFinished ? [...items, lastFinished] : items;
+    const now = new Date();
+    const activeInServiceItems = items.filter((item) => item.status === QueueStatus.IN_SERVICE);
+    const calledItems = items.filter((item) => item.status === QueueStatus.CALLED);
     const waitingItems = items.filter((item) => item.status === QueueStatus.WAITING);
-    const totalWaitMinutes = items.reduce((sum, item) => {
-      if (item.status === QueueStatus.IN_SERVICE) return sum + item.serviceDuration;
-      if (item.status === QueueStatus.WAITING) return sum + item.serviceDuration;
-      return sum;
-    }, 0);
+    const remainingInServiceMinutes = activeInServiceItems.reduce((sum, item) => sum + this.calculateServiceProgress(item, now).remainingMinutes, 0);
+    const pendingWaitMinutes = [...calledItems, ...waitingItems].reduce((sum, item) => sum + item.serviceDuration, 0);
+    const totalWaitMinutes = remainingInServiceMinutes + pendingWaitMinutes;
+    const canCallNext = this.canCallNextFromActiveItems(activeInServiceItems, waitingItems, calledItems, now);
 
     return {
-      items: visibleItems.map((item) => ({
-        ...item,
-        whatsapp: this.buildWhatsappLink(item.client.phone, item.client.name, item.estimatedMinutes)
-      })),
+      items: items.map((item) => this.buildQueueItemResponse(item, now)),
       summary: {
         attendedToday: finishedToday,
-        revenueToday: Number(appointmentsToday._sum.price ?? 0),
-        averageWaitMinutes: totalWaitMinutes
+        revenueToday: Number(appointmentsToday._sum.price ?? 0) + Number(productSalesToday._sum.totalPrice ?? 0),
+        averageWaitMinutes: totalWaitMinutes,
+        canCallNext,
+        callNextAvailableInMinutes: this.getCallNextAvailableInMinutes(activeInServiceItems, waitingItems, calledItems, now)
       }
     };
   }
@@ -82,7 +84,7 @@ export class QueueService {
       }
 
       const scheduledFor = this.resolveScheduledFor(payload.scheduledTime);
-      const position = activeQueue.length + 1;
+      const position = activeQueue.filter((item) => item.status === QueueStatus.WAITING).length + 1;
       const baseWait = Math.max(0, Math.ceil((scheduledFor.getTime() - Date.now()) / 60000));
       const previousWait = activeQueue
         .filter((item) => item.scheduledFor <= scheduledFor)
@@ -112,16 +114,13 @@ export class QueueService {
       });
       if (!orderedCreated) throw new NotFoundException("Item da fila nao encontrado apos ordenar");
 
-      return {
-        ...orderedCreated,
-        whatsapp: this.buildWhatsappLink(orderedCreated.client.phone, orderedCreated.client.name, orderedCreated.estimatedMinutes)
-      };
+      return this.buildQueueItemResponse(orderedCreated);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async updateStatus(id: string, status: QueueStatus) {
-    if (status === QueueStatus.IN_SERVICE) {
-      throw new BadRequestException("Use a acao de chamar proximo cliente");
+    if (status === QueueStatus.CALLED || status === QueueStatus.IN_SERVICE) {
+      throw new BadRequestException("Use a acao correta da fila para chamar ou iniciar atendimento");
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -133,6 +132,7 @@ export class QueueService {
         data: {
           status,
           startedAt: entry.startedAt,
+          calledAt: entry.calledAt,
           finishedAt: status === QueueStatus.FINISHED ? new Date() : entry.finishedAt
         },
         include: { client: true, barber: true }
@@ -142,10 +142,7 @@ export class QueueService {
         await this.reorderActiveQueue(tx);
       }
 
-      return {
-        ...updated,
-        whatsapp: this.buildWhatsappLink(updated.client.phone, updated.client.name, updated.estimatedMinutes)
-      };
+      return this.buildQueueItemResponse(updated);
     });
   }
 
@@ -184,10 +181,7 @@ export class QueueService {
 
       await this.reorderActiveQueue(tx);
 
-      return {
-        ...updated,
-        whatsapp: this.buildWhatsappLink(updated.client.phone, updated.client.name, updated.estimatedMinutes)
-      };
+      return this.buildQueueItemResponse(updated);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
@@ -213,20 +207,27 @@ export class QueueService {
       });
       if (!reordered) throw new NotFoundException("Item da fila nao encontrado apos adiantar");
 
-      return {
-        ...reordered,
-        whatsapp: this.buildWhatsappLink(
-          reordered.client.phone,
-          reordered.client.name,
-          reordered.estimatedMinutes,
-          `Ola, ${reordered.client.name}! Consegui antecipar seu atendimento na Barbearia Scaquetti. Voce consegue vir agora? Tempo estimado: ${reordered.estimatedMinutes} minutos.`
-        )
-      };
+      return this.buildQueueItemResponse(
+        reordered,
+        new Date(),
+        `Ola, ${reordered.client.name}! Consegui antecipar seu atendimento na Barbearia Scaquetti. Voce consegue vir agora? Tempo estimado: ${reordered.estimatedMinutes} minutos.`
+      );
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async callNext() {
     return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const activeInServiceItems = await tx.queueEntry.findMany({
+        where: { status: QueueStatus.IN_SERVICE },
+        orderBy: [{ startedAt: "asc" }, { position: "asc" }],
+        include: { client: true, barber: true }
+      });
+      const activeCalledItems = await tx.queueEntry.findMany({
+        where: { status: QueueStatus.CALLED },
+        orderBy: [{ calledAt: "asc" }, { position: "asc" }],
+        include: { client: true, barber: true }
+      });
       const next = await tx.queueEntry.findFirst({
         where: { status: QueueStatus.WAITING },
         orderBy: { position: "asc" },
@@ -234,25 +235,65 @@ export class QueueService {
       });
 
       if (!next) throw new NotFoundException("Nao ha clientes aguardando");
+      if (activeCalledItems.length > 0) {
+        throw new BadRequestException("Ja existe um cliente chamado aguardando atendimento.");
+      }
 
-      if (next.barberId) {
-        const activeForBarber = await tx.queueEntry.findFirst({
-          where: {
-            barberId: next.barberId,
-            status: QueueStatus.IN_SERVICE,
-            id: { not: next.id }
-          }
-        });
-        if (activeForBarber) {
-          throw new BadRequestException("Barbeiro ja possui atendimento em andamento");
-        }
+      if (!this.canCallNextFromActiveItems(activeInServiceItems, [next], activeCalledItems, now)) {
+        throw new BadRequestException("Chame o proximo cliente quando faltarem 10 minutos ou menos para terminar o atendimento atual");
       }
 
       const updated = await tx.queueEntry.update({
         where: { id: next.id },
         data: {
+          status: QueueStatus.CALLED,
+          calledAt: now,
+          estimatedMinutes: this.calculateCalledWaitMinutes(activeInServiceItems, now)
+        },
+        include: { client: true, barber: true }
+      });
+
+      await this.reorderActiveQueue(tx);
+
+      return this.buildQueueItemResponse(
+        updated,
+        now,
+        `Ola, ${updated.client.name}! Seu atendimento na Barbearia Scaquetti sera em aproximadamente 10 minutos. Pode se preparar para vir.`
+      );
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  async startService(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const entry = await tx.queueEntry.findUnique({ where: { id }, include: { client: true, barber: true } });
+      if (!entry) throw new NotFoundException("Item da fila nao encontrado");
+      if (entry.status !== QueueStatus.CALLED && entry.status !== QueueStatus.WAITING) {
+        throw new BadRequestException("Apenas clientes chamados ou aguardando podem iniciar atendimento");
+      }
+
+      const activeInService = await tx.queueEntry.findFirst({
+        where: { status: QueueStatus.IN_SERVICE, id: { not: id } }
+      });
+      if (activeInService) {
+        throw new BadRequestException("Ja existe um atendimento em andamento.");
+      }
+
+      if (entry.status === QueueStatus.WAITING) {
+        const activeCalled = await tx.queueEntry.findFirst({
+          where: { status: QueueStatus.CALLED, id: { not: id } }
+        });
+        if (activeCalled) {
+          throw new BadRequestException("Ja existe um cliente chamado aguardando atendimento.");
+        }
+      }
+
+      const now = new Date();
+      const updated = await tx.queueEntry.update({
+        where: { id },
+        data: {
           status: QueueStatus.IN_SERVICE,
-          startedAt: new Date(),
+          startedAt: now,
+          calledAt: entry.calledAt ?? now,
           estimatedMinutes: 0
         },
         include: { client: true, barber: true }
@@ -260,10 +301,7 @@ export class QueueService {
 
       await this.reorderActiveQueue(tx);
 
-      return {
-        ...updated,
-        whatsapp: this.buildWhatsappLink(updated.client.phone, updated.client.name, updated.estimatedMinutes)
-      };
+      return this.buildQueueItemResponse(updated, now);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
@@ -280,23 +318,87 @@ export class QueueService {
 
     let accumulatedWait = 0;
     const now = Date.now();
-    const inService = activeQueue.find((item) => item.status === QueueStatus.IN_SERVICE);
+    const inService = activeQueue.filter((item) => item.status === QueueStatus.IN_SERVICE);
+    const called = activeQueue.filter((item) => item.status === QueueStatus.CALLED);
     const waiting = activeQueue.filter((item) => item.status === QueueStatus.WAITING);
-    const orderedQueue = inService ? [inService, ...waiting] : waiting;
-    for (const [index, item] of orderedQueue.entries()) {
+    for (const item of [...inService, ...called]) {
+      const progress = this.calculateServiceProgress(item, new Date(now));
+      accumulatedWait += item.status === QueueStatus.IN_SERVICE ? progress.remainingMinutes : item.serviceDuration;
+    }
+
+    for (const [index, item] of waiting.entries()) {
       const baseWait = item.status === QueueStatus.IN_SERVICE
         ? 0
         : Math.max(0, Math.ceil((item.scheduledFor.getTime() - now) / 60000));
+      const estimatedMinutes = baseWait + accumulatedWait;
       await tx.queueEntry.update({
         where: { id: item.id },
         data: {
           position: index + 1,
-          estimatedMinutes: item.status === QueueStatus.IN_SERVICE ? 0 : baseWait + accumulatedWait
+          estimatedMinutes
         }
       });
 
       accumulatedWait += item.serviceDuration;
     }
+  }
+
+  private buildQueueItemResponse(item: QueueEntryWithRelations, now = new Date(), customWhatsappMessage?: string) {
+    const progress = this.calculateServiceProgress(item, now);
+
+    return {
+      ...item,
+      ...progress,
+      canCallNext: item.status === QueueStatus.IN_SERVICE && progress.remainingMinutes <= 10,
+      whatsapp: this.buildWhatsappLink(item.client.phone, item.client.name, item.estimatedMinutes, customWhatsappMessage)
+    };
+  }
+
+  private calculateServiceProgress(item: Pick<QueueEntryWithRelations, "status" | "startedAt" | "serviceDuration">, now = new Date()) {
+    if (item.status !== QueueStatus.IN_SERVICE || !item.startedAt) {
+      return {
+        elapsedMinutes: 0,
+        remainingMinutes: 0
+      };
+    }
+
+    const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - item.startedAt.getTime()) / 60000));
+    const remainingMinutes = Math.max(0, item.serviceDuration - elapsedMinutes);
+
+    return {
+      elapsedMinutes,
+      remainingMinutes
+    };
+  }
+
+  private canCallNextFromActiveItems(
+    inServiceItems: QueueEntryWithRelations[],
+    waitingItems: QueueEntryWithRelations[],
+    calledItems: QueueEntryWithRelations[],
+    now = new Date()
+  ) {
+    if (waitingItems.length === 0) return false;
+    if (calledItems.length > 0) return false;
+    if (inServiceItems.length === 0) return true;
+    return inServiceItems.some((item) => this.calculateServiceProgress(item, now).remainingMinutes <= 10);
+  }
+
+  private getCallNextAvailableInMinutes(
+    inServiceItems: QueueEntryWithRelations[],
+    waitingItems: QueueEntryWithRelations[],
+    calledItems: QueueEntryWithRelations[],
+    now = new Date()
+  ) {
+    if (waitingItems.length === 0 || calledItems.length > 0) return null;
+    if (inServiceItems.length === 0) return 0;
+
+    const nearestRemaining = Math.min(...inServiceItems.map((item) => this.calculateServiceProgress(item, now).remainingMinutes));
+    return Math.max(0, nearestRemaining - 10);
+  }
+
+  private calculateCalledWaitMinutes(inServiceItems: QueueEntryWithRelations[], now = new Date()) {
+    if (inServiceItems.length === 0) return 0;
+    return Math.min(...inServiceItems.map((item) => this.calculateServiceProgress(item, now).remainingMinutes));
   }
 
   private resolveScheduledFor(scheduledTime?: string | null) {

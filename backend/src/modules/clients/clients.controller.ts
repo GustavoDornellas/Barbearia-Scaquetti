@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { ClientsService } from "./clients.service";
 import { JwtAuthGuard } from "../../shared/guards/jwt-auth.guard";
 import { clientSchema } from "./clients.schemas";
@@ -7,7 +7,7 @@ import { ZodValidationPipe } from "../../shared/pipes/zod-validation.pipe";
 @UseGuards(JwtAuthGuard)
 @Controller("clients")
 export class ClientsController {
-  constructor(private readonly clientsService: ClientsService) {}
+  constructor(@Inject(ClientsService) private readonly clientsService: ClientsService) {}
 
   @Get()
   list(@Query("search") search = "", @Query("page") page = "1") {

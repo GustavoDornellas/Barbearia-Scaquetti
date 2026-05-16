@@ -4,7 +4,7 @@ import "dotenv/config";
 
 const prisma = new PrismaClient();
 
-const DEFAULT_ADMIN_NAME = "Administrador";
+const DEFAULT_OWNER_NAME = "Usuario principal";
 const BLOCKED_DEFAULT_PASSWORDS = new Set(["Admin@123"]);
 
 function validateStrongPassword(password: string) {
@@ -25,10 +25,10 @@ function validateStrongPassword(password: string) {
 function getAdminSeedConfig() {
   const email = process.env.ADMIN_EMAIL?.trim();
   const password = process.env.ADMIN_PASSWORD;
-  const name = process.env.ADMIN_NAME?.trim() || DEFAULT_ADMIN_NAME;
+  const name = process.env.ADMIN_NAME?.trim() || DEFAULT_OWNER_NAME;
 
   if (!email || !password) {
-    throw new Error("ADMIN_EMAIL e ADMIN_PASSWORD sao obrigatorios para executar o seed de admin.");
+    throw new Error("ADMIN_EMAIL e ADMIN_PASSWORD sao obrigatorios para criar o usuario principal.");
   }
 
   if (BLOCKED_DEFAULT_PASSWORDS.has(password)) {
@@ -45,7 +45,7 @@ async function main() {
   const existingAdmin = await prisma.user.findUnique({ where: { email } });
 
   if (existingAdmin) {
-    console.log(`Admin inicial ja existe: ${email}`);
+    console.log(`Usuario principal ja existe: ${email}`);
     return;
   }
 
@@ -59,7 +59,7 @@ async function main() {
     }
   });
 
-  console.log(`Admin inicial criado: ${email}`);
+  console.log(`Usuario principal criado: ${email}`);
 }
 
 main()

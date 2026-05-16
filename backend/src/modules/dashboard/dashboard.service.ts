@@ -1,5 +1,5 @@
-import { Injectable } from "@nestjs/common";
-import { Appointment, AppointmentStatus } from "@prisma/client";
+import { Inject, Injectable } from "@nestjs/common";
+import { Appointment, AppointmentStatus, ProductSale } from "@prisma/client";
 import { PrismaService } from "../../database/prisma/prisma.service";
 import {
   addDays,
@@ -14,6 +14,12 @@ type CompletedAppointmentWithClient = Appointment & {
   client: { name: string };
 };
 
+type RevenueSummary = {
+  total: number;
+  count: number;
+  quantity?: number;
+};
+
 type FlowTrendBucket = {
   label: string;
   count: number;
@@ -22,7 +28,7 @@ type FlowTrendBucket = {
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   private readonly flowBuckets = [
     { label: "08H", start: 8, end: 9 },
@@ -38,30 +44,49 @@ export class DashboardService {
     const last7DaysRange = getLast7DaysRangeInBrazil();
     const last30DaysRange = getLast30DaysRangeInBrazil();
 
-    const [totalClients, completedToday, weeklyAppointments, popularAppointments, recentAppointments, queueCount, flowTrendBuckets] = await Promise.all([
+    const [totalClients, completedToday, productSalesToday, weeklyAppointments, weeklyProductSales, popularProducts, recentAppointments, queueCount, flowTrendBuckets] = await Promise.all([
       this.prisma.client.count({ where: { isActive: true } }),
-      this.getCompletedAppointmentsBetween(todayRange.start, todayRange.end),
+      this.getCompletedAppointmentRevenueSummaryBetween(todayRange.start, todayRange.end),
+      this.getProductSalesRevenueSummaryBetween(todayRange.start, todayRange.end),
       this.getCompletedAppointmentsBetween(last7DaysRange.start, last7DaysRange.end),
-      this.getCompletedAppointmentsBetween(last30DaysRange.start, last30DaysRange.end),
+      this.getProductSalesBetween(last7DaysRange.start, last7DaysRange.end),
+      this.getPopularProductsBetween(last30DaysRange.start, last30DaysRange.end),
       this.getRecentCompletedAppointments(5),
       this.prisma.queueEntry.count({
-        where: { status: { in: ["WAITING", "IN_SERVICE"] } }
+        where: { status: { in: ["WAITING", "CALLED", "IN_SERVICE"] } }
       }),
       this.buildFlowTrendBuckets(last30DaysRange.start, last30DaysRange.end)
     ]);
 
-    const revenueToday = this.sumAppointmentRevenue(completedToday);
+    const revenueToday = completedToday.total + productSalesToday.total;
     const averageTicket = this.calculateAverageTicket(completedToday);
 
     return {
       revenueToday,
       totalClients,
       averageTicket,
+      productsSoldToday: productSalesToday.quantity ?? 0,
       queueCount,
-      weeklyRevenue: this.groupRevenueByWeekday(weeklyAppointments, last7DaysRange.start),
-      popularServices: this.buildPopularServices(popularAppointments),
+      weeklyRevenue: this.groupRevenueByWeekday(weeklyAppointments, weeklyProductSales, last7DaysRange.start),
+      popularProducts,
       recentActivities: this.buildRecentActivities(recentAppointments),
       flowTrend: this.buildFlowTrendResponse(flowTrendBuckets)
+    };
+  }
+
+  private async getCompletedAppointmentRevenueSummaryBetween(start: Date, end: Date): Promise<RevenueSummary> {
+    const result = await this.prisma.appointment.aggregate({
+      where: {
+        status: AppointmentStatus.COMPLETED,
+        endTime: { gte: start, lt: end }
+      },
+      _sum: { price: true },
+      _count: { _all: true }
+    });
+
+    return {
+      total: Number(result._sum.price ?? 0),
+      count: result._count._all
     };
   }
 
@@ -72,6 +97,69 @@ export class DashboardService {
         endTime: { gte: start, lt: end }
       }
     });
+  }
+
+  private getProductSalesBetween(start: Date, end: Date) {
+    return this.prisma.productSale.findMany({
+      where: {
+        createdAt: { gte: start, lt: end }
+      }
+    });
+  }
+
+  private async getProductSalesRevenueSummaryBetween(start: Date, end: Date): Promise<RevenueSummary> {
+    const result = await this.prisma.productSale.aggregate({
+      where: {
+        createdAt: { gte: start, lt: end }
+      },
+      _sum: { totalPrice: true, quantity: true },
+      _count: { _all: true }
+    });
+
+    return {
+      total: Number(result._sum.totalPrice ?? 0),
+      count: result._count._all,
+      quantity: result._sum.quantity ?? 0
+    };
+  }
+
+  private async getPopularProductsBetween(start: Date, end: Date) {
+    const groupedSales = await this.prisma.productSale.groupBy({
+      by: ["inventoryItemId"],
+      where: {
+        createdAt: { gte: start, lt: end }
+      },
+      _sum: {
+        quantity: true
+      }
+    });
+
+    if (groupedSales.length === 0) return [];
+
+    const productIds = groupedSales.map((sale) => sale.inventoryItemId);
+    const products = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, category: true }
+    });
+    const productLabelById = new Map(
+      products.map((product) => [product.id, `${product.name} - ${product.category}`])
+    );
+    const maxQuantity = Math.max(...groupedSales.map((sale) => sale._sum.quantity ?? 0), 0);
+    if (maxQuantity === 0) return [];
+
+    return groupedSales
+      .map((sale) => {
+        const count = sale._sum.quantity ?? 0;
+
+        return {
+          label: productLabelById.get(sale.inventoryItemId) ?? "Produto removido",
+          count,
+          percentage: Math.round((count / maxQuantity) * 100)
+        };
+      })
+      .filter((product) => product.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
   }
 
   private getRecentCompletedAppointments(take: number) {
@@ -87,41 +175,31 @@ export class DashboardService {
     return appointments.reduce((sum, appointment) => sum + Number(appointment.price), 0);
   }
 
-  private calculateAverageTicket(appointments: Array<Pick<Appointment, "price">>) {
-    if (appointments.length === 0) return 0;
-    return this.sumAppointmentRevenue(appointments) / appointments.length;
+  private calculateAverageTicket(completedAppointments: RevenueSummary) {
+    if (completedAppointments.count === 0) return 0;
+    return completedAppointments.total / completedAppointments.count;
   }
 
-  private groupRevenueByWeekday(appointments: Array<Pick<Appointment, "endTime" | "price">>, weekStart: Date) {
+  private groupRevenueByWeekday(
+    appointments: Array<Pick<Appointment, "endTime" | "price">>,
+    productSales: Array<Pick<ProductSale, "createdAt" | "totalPrice">>,
+    weekStart: Date
+  ) {
     return Array.from({ length: 7 }, (_, index) => {
       const day = addDays(weekStart, index);
       const nextDay = addDays(day, 1);
-      const value = appointments
+      const appointmentRevenue = appointments
         .filter((appointment) => appointment.endTime >= day && appointment.endTime < nextDay)
         .reduce((sum, appointment) => sum + Number(appointment.price), 0);
+      const productRevenue = productSales
+        .filter((sale) => sale.createdAt >= day && sale.createdAt < nextDay)
+        .reduce((sum, sale) => sum + Number(sale.totalPrice), 0);
 
       return {
         day: getWeekdayLabelInBrazil(day),
-        value
+        value: appointmentRevenue + productRevenue
       };
     });
-  }
-
-  private buildPopularServices(appointments: Array<Pick<Appointment, "serviceType">>) {
-    if (appointments.length === 0) return [];
-
-    const totals = appointments.reduce<Record<string, number>>((acc, appointment) => {
-      acc[appointment.serviceType] = (acc[appointment.serviceType] ?? 0) + 1;
-      return acc;
-    }, {});
-
-    return Object.entries(totals)
-      .map(([label, count]) => ({
-        label,
-        count,
-        percentage: Math.round((count / appointments.length) * 100)
-      }))
-      .sort((a, b) => b.count - a.count);
   }
 
   private buildRecentActivities(appointments: CompletedAppointmentWithClient[]) {

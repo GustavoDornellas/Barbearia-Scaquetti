@@ -8,9 +8,12 @@ import { useToastStore } from "../store/toast-store";
 
 type QueueItem = {
   id: string;
-  status: "WAITING" | "IN_SERVICE" | "FINISHED" | "CANCELLED";
+  status: "WAITING" | "CALLED" | "IN_SERVICE" | "FINISHED" | "CANCELLED";
   estimatedMinutes: number;
   serviceDuration: number;
+  elapsedMinutes: number;
+  remainingMinutes: number;
+  canCallNext: boolean;
   serviceLabel: string;
   scheduledFor: string;
   paidAmount?: number | null;
@@ -35,7 +38,13 @@ export function QueuePage() {
   const notify = useToastStore((state) => state.notify);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
-  const [summary, setSummary] = useState({ attendedToday: 0, revenueToday: 0, averageWaitMinutes: 0 });
+  const [summary, setSummary] = useState({
+    attendedToday: 0,
+    revenueToday: 0,
+    averageWaitMinutes: 0,
+    canCallNext: false,
+    callNextAvailableInMinutes: null as number | null
+  });
   const [flowTrend, setFlowTrend] = useState<FlowTrendPoint[]>(emptyFlowTrend);
   const [loading, setLoading] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -72,6 +81,11 @@ export function QueuePage() {
 
   useEffect(() => {
     load();
+    const interval = window.setInterval(() => {
+      load();
+    }, 30000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   async function submit(event: FormEvent) {
@@ -120,6 +134,16 @@ export function QueuePage() {
     }
   }
 
+  async function startService(id: string) {
+    try {
+      await api.post(`/queue/${id}/start`);
+      notify("Atendimento iniciado.", "success");
+      await load();
+    } catch (error) {
+      notify(getFriendlyError(error), "error");
+    }
+  }
+
   async function updateStatus(id: string, status: QueueItem["status"]) {
     try {
       await api.patch(`/queue/${id}/status`, { status });
@@ -155,6 +179,31 @@ export function QueuePage() {
     return peak;
   }, null);
   const hasFlowTrendData = flowTrend.some((point) => point.count > 0);
+  const hasWaitingClient = items.some((item) => item.status === "WAITING");
+  const hasCalledClient = items.some((item) => item.status === "CALLED");
+  const hasInServiceClient = items.some((item) => item.status === "IN_SERVICE");
+
+  function getStatusTone(status: QueueItem["status"]): "gold" | "green" | "red" | "gray" {
+    if (status === "IN_SERVICE" || status === "CALLED") return "gold";
+    if (status === "WAITING") return "gray";
+    if (status === "FINISHED") return "green";
+    return "red";
+  }
+
+  function getStatusLabel(status: QueueItem["status"]) {
+    if (status === "IN_SERVICE") return "Em atendimento";
+    if (status === "CALLED") return "Chamado";
+    if (status === "WAITING") return "Aguardando";
+    if (status === "FINISHED") return "Finalizado";
+    return "Cancelado";
+  }
+
+  function getCallNextLabel(item: QueueItem) {
+    if (hasCalledClient) return "Cliente ja chamado";
+    if (summary.canCallNext) return "Chamar proximo";
+    const minutes = summary.callNextAvailableInMinutes ?? Math.max(0, item.remainingMinutes - 10);
+    return `Chamar proximo em ${minutes} min`;
+  }
 
   return (
     <div className="space-y-8">
@@ -164,6 +213,9 @@ export function QueuePage() {
         actions={
           <>
             <Button variant="secondary" onClick={() => load()}>Atualizar</Button>
+            {hasWaitingClient && !hasInServiceClient && !hasCalledClient ? (
+              <Button variant="secondary" onClick={() => callClient()}>Chamar proximo</Button>
+            ) : null}
             <Button onClick={() => setFormOpen(true)}>Adicionar na Fila</Button>
           </>
         }
@@ -186,26 +238,53 @@ export function QueuePage() {
               <div>
                 <div className="flex flex-wrap items-center gap-3">
                   <h3 className="text-lg font-semibold">{item.client.name}</h3>
-                  <StatusBadge tone={item.status === "IN_SERVICE" ? "gold" : item.status === "WAITING" ? "gray" : item.status === "FINISHED" ? "green" : "red"}>
-                    {item.status === "IN_SERVICE" ? "Em atendimento" : item.status === "WAITING" ? "Aguardando" : item.status === "FINISHED" ? "Finalizado" : "Cancelado"}
-                  </StatusBadge>
+                  <StatusBadge tone={getStatusTone(item.status)}>{getStatusLabel(item.status)}</StatusBadge>
                 </div>
-                  <p className="mt-2 text-sm text-muted">
-                    {item.serviceLabel} - {item.serviceDuration} min - horario {formatQueueTime(item.scheduledFor)}
-                  </p>
+                <p className="mt-2 text-sm text-muted">
+                  {item.serviceLabel} - {item.serviceDuration} min - horario {formatQueueTime(item.scheduledFor)}
+                </p>
+                {item.status === "CALLED" ? (
+                  <p className="mt-3 text-sm font-semibold text-gold">Aguardando chegada</p>
+                ) : null}
+                {item.status === "IN_SERVICE" ? (
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full border border-border bg-background px-3 py-1 text-muted">
+                      Decorrido: <strong className="text-text">{item.elapsedMinutes} min</strong>
+                    </span>
+                    <span className="rounded-full border border-border bg-background px-3 py-1 text-muted">
+                      Restante: <strong className="text-gold">{item.remainingMinutes} min</strong>
+                    </span>
+                    {item.canCallNext ? (
+                      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-semibold text-emerald-300">
+                        Pode chamar o proximo
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
                 <div className="mr-2">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted">Espera</p>
-                  <p className="font-semibold text-gold">{item.estimatedMinutes} min</p>
+                  <p className="font-semibold text-gold">{item.status === "CALLED" ? "Chamado" : `${item.estimatedMinutes} min`}</p>
                 </div>
                 {item.status === "WAITING" && isFutureQueueTime(item.scheduledFor) ? (
                   <Button variant="secondary" onClick={() => advanceClient(item.id)}>Adiantar</Button>
                 ) : null}
-                {item.status === "WAITING" ? <Button onClick={() => callClient()}>Chamar proximo</Button> : null}
+                {item.status === "CALLED" ? (
+                  <Button onClick={() => startService(item.id)}>Iniciar atendimento</Button>
+                ) : null}
+                {item.status === "IN_SERVICE" && hasWaitingClient ? (
+                  <Button
+                    onClick={() => callClient()}
+                    disabled={!summary.canCallNext}
+                    title={summary.canCallNext ? "Chamar proximo cliente" : "Liberado quando faltar 10 minutos ou menos no atendimento atual"}
+                  >
+                    {getCallNextLabel(item)}
+                  </Button>
+                ) : null}
                 {item.status === "IN_SERVICE" ? <Button onClick={() => { setFinishItem(item); setFinishAmount(""); }}>Finalizar</Button> : null}
-                {["WAITING", "IN_SERVICE"].includes(item.status) ? <Button variant="secondary" onClick={() => updateStatus(item.id, "CANCELLED")}>Cancelar</Button> : null}
+                {["WAITING", "CALLED", "IN_SERVICE"].includes(item.status) ? <Button variant="secondary" onClick={() => updateStatus(item.id, "CANCELLED")}>Cancelar</Button> : null}
               </div>
             </div>
           </div>

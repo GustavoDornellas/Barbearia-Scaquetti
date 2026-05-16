@@ -8,9 +8,10 @@ type DashboardData = {
   revenueToday: number;
   totalClients: number;
   averageTicket: number;
+  productsSoldToday: number;
   queueCount: number;
   weeklyRevenue: Array<{ day: string; value: number }>;
-  popularServices: Array<{ label: string; count: number; percentage: number }>;
+  popularProducts: Array<{ label: string; count: number; percentage: number }>;
   recentActivities: Array<{
     id: string;
     clientName: string;
@@ -77,9 +78,9 @@ export function DashboardPage() {
         <StatCard label="Faturamento de hoje" value={`R$ ${data?.revenueToday.toFixed(2) ?? "0,00"}`} hint="Atendimentos finalizados hoje" />
         <StatCard label="Clientes cadastrados" value={String(data?.totalClients ?? 0)} hint="Total de clientes no sistema" />
         <StatCard
-          label="Valor médio por atendimento"
-          value={`R$ ${data?.averageTicket.toFixed(2) ?? "0,00"}`}
-          hint={(data?.queueCount ?? 0) === 0 ? "Nenhum cliente na fila" : `${data?.queueCount ?? 0} clientes na fila agora`}
+          label="Produtos vendidos hoje"
+          value={String(data?.productsSoldToday ?? 0).padStart(2, "0")}
+          hint={(data?.productsSoldToday ?? 0) === 1 ? "1 unidade vendida hoje" : `${data?.productsSoldToday ?? 0} unidades vendidas hoje`}
         />
       </div>
 
@@ -113,18 +114,18 @@ export function DashboardPage() {
 
         <section className="space-y-5">
           <div className="rounded-[32px] border border-border bg-panel p-6">
-            <h2 className="text-xl font-bold">Serviços mais feitos</h2>
+            <h2 className="text-xl font-bold">Produtos mais vendidos</h2>
             <div className="mt-6 space-y-5">
-              {data?.popularServices.length === 0 ? (
-                <p className="text-sm text-muted">Nenhum serviço registrado ainda.</p>
-              ) : data?.popularServices.map((service) => (
-                <div key={service.label}>
+              {(data?.popularProducts.length ?? 0) === 0 ? (
+                <p className="text-sm text-muted">Nenhuma venda registrada ainda.</p>
+              ) : data?.popularProducts.map((product) => (
+                <div key={product.label}>
                   <div className="mb-2 flex justify-between text-sm">
-                    <span>{service.label}</span>
-                    <span className="text-gold">{service.percentage}%</span>
+                    <span>{product.label}</span>
+                    <span className="text-gold">{product.percentage}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-white/5">
-                    <div className="h-2 rounded-full bg-gold" style={{ width: `${service.percentage}%` }} />
+                    <div className="h-2 rounded-full bg-gold" style={{ width: `${product.percentage}%` }} />
                   </div>
                 </div>
               ))}

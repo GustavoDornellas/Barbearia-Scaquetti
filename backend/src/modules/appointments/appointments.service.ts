@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AppointmentServiceType, AppointmentStatus } from "@prisma/client";
 import { PrismaService } from "../../database/prisma/prisma.service";
 import { serviceCatalog } from "../../shared/utils/service-catalog";
@@ -9,7 +9,7 @@ type AppointmentInput = z.infer<typeof appointmentSchema>;
 
 @Injectable()
 export class AppointmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list() {
     return this.prisma.appointment.findMany({

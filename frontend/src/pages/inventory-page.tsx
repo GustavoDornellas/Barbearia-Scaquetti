@@ -178,9 +178,10 @@ export function InventoryPage() {
       </div>
 
       <section className="overflow-hidden rounded-[32px] border border-border bg-panel">
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1.4fr] gap-3 border-b border-border px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted">
+        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1.4fr] gap-3 border-b border-border px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted">
           <span>Produto</span>
           <span>Marca</span>
+          <span>Valor</span>
           <span>Quantidade</span>
           <span>Status</span>
           <span>Ações</span>
@@ -190,12 +191,12 @@ export function InventoryPage() {
         ) : items.length === 0 ? (
           <div className="px-6 py-10 text-sm text-muted">Nenhum produto cadastrado.</div>
         ) : items.map((item) => (
-          <div key={item.id} className="grid grid-cols-1 gap-3 border-b border-border px-6 py-5 text-sm lg:grid-cols-[2fr_1fr_1fr_1fr_1.4fr]">
+          <div key={item.id} className="grid grid-cols-1 gap-3 border-b border-border px-6 py-5 text-sm lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1.4fr]">
             <div>
               <div className="font-semibold">{item.name}</div>
-            <div className="text-xs text-muted">{item.category}</div>
             </div>
-            <div className="text-muted">R$ {Number(item.salePrice).toFixed(2)}</div>
+            <div className="text-muted">{item.category}</div>
+            <div className="font-semibold text-gold">R$ {Number(item.salePrice).toFixed(2)}</div>
             <div className="font-semibold">{item.quantity} <span className="text-xs text-muted">{item.unit}</span></div>
             <div>
               <StatusBadge tone={item.status === "NORMAL" ? "green" : item.status === "LOW" ? "gold" : "red"}>

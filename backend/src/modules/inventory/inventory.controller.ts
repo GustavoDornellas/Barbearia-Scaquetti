@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { InventoryService } from "./inventory.service";
 import { JwtAuthGuard } from "../../shared/guards/jwt-auth.guard";
 import { Roles } from "../../shared/decorators/roles.decorator";
@@ -10,7 +10,7 @@ import { RolesGuard } from "../../shared/guards/roles.guard";
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("inventory")
 export class InventoryController {
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(@Inject(InventoryService) private readonly inventoryService: InventoryService) {}
 
   @Get()
   list() {

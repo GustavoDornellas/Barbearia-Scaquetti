@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { AppointmentsService } from "./appointments.service";
 import { JwtAuthGuard } from "../../shared/guards/jwt-auth.guard";
 import { appointmentSchema, appointmentStatusSchema } from "./appointments.schemas";
@@ -7,7 +7,7 @@ import { ZodValidationPipe } from "../../shared/pipes/zod-validation.pipe";
 @UseGuards(JwtAuthGuard)
 @Controller("appointments")
 export class AppointmentsController {
-  constructor(private readonly appointmentsService: AppointmentsService) {}
+  constructor(@Inject(AppointmentsService) private readonly appointmentsService: AppointmentsService) {}
 
   @Get()
   list() {

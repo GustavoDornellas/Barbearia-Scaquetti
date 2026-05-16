@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AppointmentStatus, Prisma, QueueStatus } from "@prisma/client";
 import { PrismaService } from "../../database/prisma/prisma.service";
 import { ClientInput } from "./clients.schemas";
 
 @Injectable()
 export class ClientsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list(search = "", page = 1, pageSize = 5) {
     const where: Prisma.ClientWhereInput = {
@@ -62,23 +62,28 @@ export class ClientsService {
   }
 
   async create(payload: ClientInput) {
-    return this.prisma.client.create({
-      data: {
-        ...payload,
-        email: payload.email || null
-      }
+    const data = this.normalizeClientPayload(payload);
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.ensureUniqueClient(tx, data);
+
+      return tx.client.create({
+        data
+      });
     });
   }
 
   async update(id: string, payload: ClientInput) {
     await this.ensureExists(id);
+    const data = this.normalizeClientPayload(payload);
 
-    return this.prisma.client.update({
-      where: { id },
-      data: {
-        ...payload,
-        email: payload.email || null
-      }
+    return this.prisma.$transaction(async (tx) => {
+      await this.ensureUniqueClient(tx, data, id);
+
+      return tx.client.update({
+        where: { id },
+        data
+      });
     });
   }
 
@@ -118,5 +123,54 @@ export class ClientsService {
     const client = await this.prisma.client.findFirst({ where: { id, isActive: true } });
     if (!client) throw new NotFoundException("Cliente nao encontrado");
     return client;
+  }
+
+  private normalizeClientPayload(payload: ClientInput) {
+    const phone = this.normalizePhone(payload.phone);
+    this.ensureValidBrazilianMobilePhone(phone);
+
+    return {
+      ...payload,
+      name: payload.name.trim(),
+      phone,
+      email: payload.email ? payload.email.trim().toLowerCase() : null,
+      notes: payload.notes?.trim() || null
+    };
+  }
+
+  private normalizePhone(phone: string) {
+    return phone.replace(/\D/g, "");
+  }
+
+  private ensureValidBrazilianMobilePhone(phone: string) {
+    if (!/^[1-9]{2}9\d{8}$/.test(phone)) {
+      throw new BadRequestException("Telefone deve ser um celular brasileiro com 11 digitos.");
+    }
+  }
+
+  private async ensureUniqueClient(
+    tx: Prisma.TransactionClient,
+    payload: ReturnType<ClientsService["normalizeClientPayload"]>,
+    ignoredClientId?: string
+  ) {
+    const activeClients = await tx.client.findMany({
+      where: {
+        isActive: true,
+        ...(ignoredClientId ? { id: { not: ignoredClientId } } : {})
+      },
+      select: { id: true, phone: true, email: true }
+    });
+
+    const duplicatedPhone = activeClients.some((client) => this.normalizePhone(client.phone) === payload.phone);
+    if (duplicatedPhone) {
+      throw new BadRequestException("Já existe um cliente cadastrado com este telefone.");
+    }
+
+    if (payload.email) {
+      const duplicatedEmail = activeClients.some((client) => client.email?.toLowerCase() === payload.email);
+      if (duplicatedEmail) {
+        throw new BadRequestException("Já existe um cliente cadastrado com este e-mail.");
+      }
+    }
   }
 }

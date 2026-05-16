@@ -71,7 +71,7 @@ describe("QueueService", () => {
     expect(tx.queueEntry.create).not.toHaveBeenCalled();
   });
 
-  it("always calls the waiting item with the smallest position", async () => {
+  it("calls the waiting item with the smallest position without starting service", async () => {
     const tx = {
       queueEntry: {
         findFirst: jest.fn().mockResolvedValue({
@@ -86,11 +86,16 @@ describe("QueueService", () => {
           id: "queue-2",
           estimatedMinutes: 0,
           serviceDuration: 30,
-          status: QueueStatus.IN_SERVICE,
+          status: QueueStatus.CALLED,
+          calledAt: new Date(),
+          startedAt: null,
           client: { name: "Ana", phone: "5511999999999" },
           barber: null
         }),
-        findMany: jest.fn().mockResolvedValue([])
+        findMany: jest.fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([])
       }
     };
     const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
@@ -102,14 +107,23 @@ describe("QueueService", () => {
       where: expect.objectContaining({ status: QueueStatus.WAITING }),
       orderBy: { position: "asc" }
     }));
-    expect(tx.queueEntry.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "queue-2" } }));
+    expect(tx.queueEntry.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "queue-2" },
+      data: expect.objectContaining({
+        status: QueueStatus.CALLED,
+        calledAt: expect.any(Date)
+      })
+    }));
+    expect(tx.queueEntry.update).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: QueueStatus.IN_SERVICE })
+    }));
   });
 
   it("does not require scheduled time to call next client", async () => {
     const tx = {
       queueEntry: {
         findFirst: jest.fn()
-          .mockResolvedValueOnce({
+          .mockResolvedValue({
             id: "queue-1",
             status: QueueStatus.WAITING,
             position: 1,
@@ -118,17 +132,19 @@ describe("QueueService", () => {
             barberId: "barber-1",
             client: { name: "Ana", phone: "5511999999999" },
             barber: { id: "barber-1", name: "Barbeiro" }
-          })
-          .mockResolvedValueOnce(null),
+          }),
         update: jest.fn().mockResolvedValue({
           id: "queue-1",
           estimatedMinutes: 0,
           serviceDuration: 30,
-          status: QueueStatus.IN_SERVICE,
+          status: QueueStatus.CALLED,
           client: { name: "Ana", phone: "5511999999999" },
           barber: null
         }),
-        findMany: jest.fn().mockResolvedValue([])
+        findMany: jest.fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([])
       }
     };
     const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
@@ -139,6 +155,154 @@ describe("QueueService", () => {
     expect(tx.queueEntry.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { status: QueueStatus.WAITING },
       orderBy: { position: "asc" }
+    }));
+  });
+
+  it("blocks calling next while current service has more than 10 minutes remaining", async () => {
+    const startedAt = new Date(Date.now() - 5 * 60 * 1000);
+    const tx = {
+      queueEntry: {
+        findMany: jest.fn()
+          .mockResolvedValueOnce([
+            {
+              id: "queue-current",
+              status: QueueStatus.IN_SERVICE,
+              position: 1,
+              serviceDuration: 30,
+              startedAt,
+              client: { name: "Ana", phone: "5511999999999" },
+              barber: null
+            }
+          ])
+          .mockResolvedValueOnce([]),
+        findFirst: jest.fn().mockResolvedValue({
+          id: "queue-next",
+          status: QueueStatus.WAITING,
+          position: 2,
+          serviceDuration: 30,
+          client: { name: "Bruno", phone: "5511888888888" },
+          barber: null
+        }),
+        update: jest.fn()
+      }
+    };
+    const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
+    const service = new QueueService(prisma as never);
+
+    await expect(service.callNext()).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.queueEntry.update).not.toHaveBeenCalled();
+  });
+
+  it("allows calling next when current service has 10 minutes or less remaining", async () => {
+    const startedAt = new Date(Date.now() - 20 * 60 * 1000);
+    const tx = {
+      queueEntry: {
+        findMany: jest.fn()
+          .mockResolvedValueOnce([
+            {
+              id: "queue-current",
+              status: QueueStatus.IN_SERVICE,
+              position: 1,
+              serviceDuration: 30,
+              startedAt,
+              client: { name: "Ana", phone: "5511999999999" },
+              barber: null
+            }
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              id: "queue-current",
+              status: QueueStatus.IN_SERVICE,
+              position: 1,
+              serviceDuration: 30,
+              startedAt,
+              scheduledFor: new Date(),
+              client: { name: "Ana", phone: "5511999999999" },
+              barber: null
+            },
+            {
+              id: "queue-next",
+              status: QueueStatus.CALLED,
+              position: 2,
+              serviceDuration: 30,
+              calledAt: new Date(),
+              scheduledFor: new Date(),
+              client: { name: "Bruno", phone: "5511888888888" },
+              barber: null
+            }
+          ]),
+        findFirst: jest.fn().mockResolvedValue({
+          id: "queue-next",
+          status: QueueStatus.WAITING,
+          position: 2,
+          serviceDuration: 30,
+          client: { name: "Bruno", phone: "5511888888888" },
+          barber: null
+        }),
+        update: jest.fn().mockResolvedValue({
+          id: "queue-next",
+          estimatedMinutes: 10,
+          serviceDuration: 30,
+          calledAt: new Date(),
+          startedAt: null,
+          status: QueueStatus.CALLED,
+          client: { name: "Bruno", phone: "5511888888888" },
+          barber: null
+        })
+      }
+    };
+    const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
+    const service = new QueueService(prisma as never);
+
+    await service.callNext();
+
+    expect(tx.queueEntry.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "queue-next" },
+      data: expect.objectContaining({
+        status: QueueStatus.CALLED,
+        calledAt: expect.any(Date)
+      })
+    }));
+  });
+
+  it("starts service only when client was called", async () => {
+    const tx = {
+      queueEntry: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: "queue-called",
+          status: QueueStatus.CALLED,
+          estimatedMinutes: 10,
+          serviceDuration: 30,
+          calledAt: new Date(),
+          scheduledFor: new Date(),
+          client: { name: "Ana", phone: "5511999999999" },
+          barber: null
+        }),
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({
+          id: "queue-called",
+          status: QueueStatus.IN_SERVICE,
+          estimatedMinutes: 0,
+          serviceDuration: 30,
+          startedAt: new Date(),
+          client: { name: "Ana", phone: "5511999999999" },
+          barber: null
+        }),
+        findMany: jest.fn().mockResolvedValue([])
+      }
+    };
+    const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
+    const service = new QueueService(prisma as never);
+
+    await service.startService("queue-called");
+
+    expect(tx.queueEntry.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "queue-called" },
+      data: expect.objectContaining({
+        status: QueueStatus.IN_SERVICE,
+        startedAt: expect.any(Date)
+      })
     }));
   });
 

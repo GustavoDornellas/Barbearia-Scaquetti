@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { QueueStatus } from "@prisma/client";
 import { Request } from "express";
 import { JwtAuthGuard } from "../../shared/guards/jwt-auth.guard";
@@ -13,7 +13,7 @@ type AuthenticatedRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("queue")
 export class QueueController {
-  constructor(private readonly queueService: QueueService) {}
+  constructor(@Inject(QueueService) private readonly queueService: QueueService) {}
 
   @Get()
   list() {
@@ -38,6 +38,11 @@ export class QueueController {
   @Post(":id/advance")
   advance(@Param("id") id: string) {
     return this.queueService.advance(id);
+  }
+
+  @Post(":id/start")
+  startService(@Param("id") id: string) {
+    return this.queueService.startService(id);
   }
 
   @Post("call-next")
