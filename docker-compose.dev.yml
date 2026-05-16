@@ -1,21 +1,42 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: barbearia_scaquetti
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_dev_password
+      POSTGRES_DB: ${POSTGRES_DB:-barbearia_scaquetti}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_dev_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d barbearia_scaquetti"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-barbearia_scaquetti}"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: barbearia-backend-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
+      PORT: ${PORT:-3001}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:devpassword@postgres:5432/barbearia_scaquetti?schema=public}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://postgres:devpassword@postgres:5432/barbearia_scaquetti?schema=public}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-only-change-this-access-secret-with-64-plus-random-chars}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-only-change-this-refresh-secret-with-64-plus-random-chars}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
+      PRISMA_CLIENT_ENGINE_TYPE: ${PRISMA_CLIENT_ENGINE_TYPE:-binary}
+    ports:
+      - "${PORT:-3001}:3001"
 
 volumes:
   postgres_dev_data:
