@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: barbearia-scaquetti-api
+    runtime: node
+    rootDir: backend
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run build
+    preDeployCommand: npm run prisma:migrate:deploy
+    startCommand: npm run start:prod
+    healthCheckPath: /v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_PROVIDER
+        value: local
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: FRONTEND_URL
+        sync: false
+      - key: RATE_LIMIT_PER_MINUTE
+        value: 120
+      - key: PRISMA_CLIENT_ENGINE_TYPE
+        value: binary

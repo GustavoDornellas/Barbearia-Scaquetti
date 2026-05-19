@@ -12,6 +12,7 @@ import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { UsersModule } from "./modules/users/users.module";
 import { CsrfTokenMiddleware } from "./shared/middleware/csrf-token.middleware";
 import { validateEnv } from "./shared/config/env.validation";
+import { HealthController } from "./health.controller";
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { validateEnv } from "./shared/config/env.validation";
     InventoryModule,
     DashboardModule
   ],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

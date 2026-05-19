@@ -1,8 +1,14 @@
 import axios from "axios";
 import { useToastStore } from "../store/toast-store";
 
+const apiBaseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
+
+if (!apiBaseUrl) {
+  throw new Error("VITE_API_URL nao configurada.");
+}
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:3001/v1",
+  baseURL: apiBaseUrl,
   withCredentials: true
 });
 

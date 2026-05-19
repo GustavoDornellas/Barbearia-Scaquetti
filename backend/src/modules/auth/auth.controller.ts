@@ -16,7 +16,7 @@ export class AuthController {
   @Post("login")
   async login(@Body(new ZodValidationPipe(loginSchema)) body: unknown, @Res({ passthrough: true }) response: Response) {
     const payload = await this.authService.login(body as never);
-    this.attachAuthCookies(response, payload.accessToken, payload.refreshToken, payload.accessMaxAge);
+    this.attachAuthCookies(response, payload.accessToken, payload.refreshToken, payload.accessMaxAge, payload.refreshMaxAge);
     return { user: payload.user };
   }
 
@@ -28,7 +28,7 @@ export class AuthController {
     }
 
     const payload = await this.authService.refresh(token);
-    this.attachAuthCookies(response, payload.accessToken, payload.refreshToken, payload.accessMaxAge);
+    this.attachAuthCookies(response, payload.accessToken, payload.refreshToken, payload.accessMaxAge, payload.refreshMaxAge);
     return { user: payload.user };
   }
 
@@ -60,7 +60,7 @@ export class AuthController {
     };
   }
 
-  private attachAuthCookies(response: Response, accessToken: string, refreshToken: string, accessMaxAge = 15 * 60 * 1000) {
+  private attachAuthCookies(response: Response, accessToken: string, refreshToken: string, accessMaxAge: number, refreshMaxAge: number) {
     const isProduction = process.env.NODE_ENV === "production";
     const cookieOptions = {
       httpOnly: true,
@@ -76,7 +76,7 @@ export class AuthController {
 
     response.cookie("refreshToken", refreshToken, {
       ...cookieOptions,
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      maxAge: refreshMaxAge
     });
   }
 

@@ -7,6 +7,8 @@ describe("AuthController", () => {
       login: jest.fn().mockResolvedValue({
         accessToken: "access",
         refreshToken: "refresh",
+        accessMaxAge: 900000,
+        refreshMaxAge: 604800000,
         user: { id: "1", email: "admin@test.com", role: "ADMIN", name: "Admin" }
       })
     } as never);

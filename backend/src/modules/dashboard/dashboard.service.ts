@@ -171,10 +171,6 @@ export class DashboardService {
     });
   }
 
-  private sumAppointmentRevenue(appointments: Array<Pick<Appointment, "price">>) {
-    return appointments.reduce((sum, appointment) => sum + Number(appointment.price), 0);
-  }
-
   private calculateAverageTicket(completedAppointments: RevenueSummary) {
     if (completedAppointments.count === 0) return 0;
     return completedAppointments.total / completedAppointments.count;

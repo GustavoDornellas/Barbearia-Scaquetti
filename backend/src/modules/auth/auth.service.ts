@@ -5,6 +5,19 @@ import bcrypt from "bcrypt";
 import { PrismaService } from "../../database/prisma/prisma.service";
 import { LoginInput } from "./auth.schemas";
 
+function durationToMs(value: `${number}${"s" | "m" | "h" | "d"}`) {
+  const amount = Number(value.slice(0, -1));
+  const unit = value.slice(-1);
+  const multipliers = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000
+  };
+
+  return amount * multipliers[unit as keyof typeof multipliers];
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -75,18 +88,22 @@ export class AuthService {
     );
 
     const tokenHash = await bcrypt.hash(refreshToken, 10);
+    const accessMaxAge = durationToMs(accessExpiresIn);
+    const refreshMaxAge = durationToMs(refreshExpiresIn);
+
     await this.prisma.refreshToken.create({
       data: {
         userId,
         tokenHash,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        expiresAt: new Date(Date.now() + refreshMaxAge)
       }
     });
 
     return {
       accessToken,
       refreshToken,
-      accessMaxAge: 15 * 60 * 1000,
+      accessMaxAge,
+      refreshMaxAge,
       user: {
         id: userId,
         email,

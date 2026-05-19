@@ -11,10 +11,24 @@ import { HttpExceptionFilter } from "./shared/filters/http-exception.filter";
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: false });
   const isProduction = process.env.NODE_ENV === "production";
-  const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
+  const allowedOrigins = (process.env.FRONTEND_URL ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (isProduction) {
+    app.getHttpAdapter().getInstance().set("trust proxy", 1);
+  }
 
   app.enableCors({
-    origin: frontendUrl,
+    origin(origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("Origem nao permitida pelo CORS"));
+    },
     credentials: true
   });
 
@@ -38,7 +52,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  await app.listen(Number(process.env.PORT));
+  await app.listen(Number(process.env.PORT ?? 3001));
 }
 
 bootstrap();
