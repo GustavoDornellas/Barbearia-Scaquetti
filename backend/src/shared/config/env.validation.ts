@@ -44,6 +44,14 @@ const envSchema = z.object({
   }
 
   if (config.NODE_ENV === "production") {
+    if (!config.DIRECT_URL) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DIRECT_URL"],
+        message: "DIRECT_URL is required in production for Prisma migrations"
+      });
+    }
+
     if (config.JWT_ACCESS_SECRET.length < 64) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

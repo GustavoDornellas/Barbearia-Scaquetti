@@ -153,21 +153,27 @@ export class ClientsService {
     payload: ReturnType<ClientsService["normalizeClientPayload"]>,
     ignoredClientId?: string
   ) {
-    const activeClients = await tx.client.findMany({
+    const duplicatedPhone = await tx.client.findFirst({
       where: {
         isActive: true,
+        phone: payload.phone,
         ...(ignoredClientId ? { id: { not: ignoredClientId } } : {})
-      },
-      select: { id: true, phone: true, email: true }
+      }
     });
 
-    const duplicatedPhone = activeClients.some((client) => this.normalizePhone(client.phone) === payload.phone);
     if (duplicatedPhone) {
       throw new BadRequestException("Já existe um cliente cadastrado com este telefone.");
     }
 
     if (payload.email) {
-      const duplicatedEmail = activeClients.some((client) => client.email?.toLowerCase() === payload.email);
+      const duplicatedEmail = await tx.client.findFirst({
+        where: {
+          isActive: true,
+          email: { equals: payload.email, mode: "insensitive" },
+          ...(ignoredClientId ? { id: { not: ignoredClientId } } : {})
+        }
+      });
+
       if (duplicatedEmail) {
         throw new BadRequestException("Já existe um cliente cadastrado com este e-mail.");
       }

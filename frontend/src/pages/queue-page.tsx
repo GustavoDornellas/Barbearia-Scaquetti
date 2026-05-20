@@ -51,6 +51,8 @@ export function QueuePage() {
   const [form, setForm] = useState({ clientId: "", serviceLabel: "", serviceDuration: "", scheduledTime: "" });
   const [finishItem, setFinishItem] = useState<QueueItem | null>(null);
   const [finishAmount, setFinishAmount] = useState("");
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   function formatQueueTime(value: string) {
     return new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -60,33 +62,57 @@ export function QueuePage() {
     return new Date(value).getTime() > Date.now();
   }
 
-  async function load() {
-    setLoading(true);
+  async function loadQueue(showLoading = true) {
+    if (showLoading) setLoading(true);
     try {
-      const [queueResponse, clientsResponse, dashboardResponse] = await Promise.all([
-        api.get("/queue"),
-        api.get("/clients"),
-        api.get("/dashboard")
-      ]);
+      const queueResponse = await api.get("/queue");
       setItems(queueResponse.data.data.items);
       setSummary(queueResponse.data.data.summary);
-      setClients(clientsResponse.data.data.items);
-      setFlowTrend(dashboardResponse.data.data.flowTrend?.buckets ?? emptyFlowTrend);
     } catch (error) {
       notify(getFriendlyError(error), "error");
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
+    }
+  }
+
+  async function loadClients() {
+    if (clients.length > 0 || clientsLoading) return;
+
+    setClientsLoading(true);
+    try {
+      const clientsResponse = await api.get("/clients");
+      setClients(clientsResponse.data.data.items);
+    } catch (error) {
+      notify(getFriendlyError(error), "error");
+    } finally {
+      setClientsLoading(false);
+    }
+  }
+
+  async function loadFlowTrend() {
+    try {
+      const dashboardResponse = await api.get("/dashboard");
+      setFlowTrend(dashboardResponse.data.data.flowTrend?.buckets ?? emptyFlowTrend);
+    } catch (error) {
+      notify(getFriendlyError(error), "error");
     }
   }
 
   useEffect(() => {
-    load();
+    loadQueue();
+    loadClients();
+    loadFlowTrend();
     const interval = window.setInterval(() => {
-      load();
+      loadQueue(false);
     }, 30000);
 
     return () => window.clearInterval(interval);
   }, []);
+
+  async function openQueueForm() {
+    setFormOpen(true);
+    await loadClients();
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -100,57 +126,90 @@ export function QueuePage() {
       return;
     }
     try {
+      setActionLoading("submit");
       await api.post("/queue", { ...form, serviceDuration });
       notify("Cliente adicionado a fila.", "success");
       setFormOpen(false);
       setForm({ clientId: "", serviceLabel: "", serviceDuration: "", scheduledTime: "" });
-      await load();
+      await loadQueue(false);
     } catch (error) {
       notify(getFriendlyError(error), "error");
+    } finally {
+      setActionLoading(null);
     }
   }
 
   async function callClient() {
+    const whatsappWindow = window.open("", "_blank");
+
     try {
+      setActionLoading("call");
       const response = await api.post("/queue/call-next");
       const link = response.data.data.whatsapp;
-      if (link) window.open(link, "_blank");
+      if (link && whatsappWindow) {
+        whatsappWindow.location.href = link;
+      } else if (link) {
+        window.open(link, "_blank");
+      } else {
+        whatsappWindow?.close();
+      }
       notify("Cliente chamado.", "success");
-      await load();
+      await loadQueue(false);
     } catch (error) {
+      whatsappWindow?.close();
       notify(getFriendlyError(error), "error");
+    } finally {
+      setActionLoading(null);
     }
   }
 
   async function advanceClient(id: string) {
+    const whatsappWindow = window.open("", "_blank");
+
     try {
+      setActionLoading(`advance-${id}`);
       const response = await api.post(`/queue/${id}/advance`);
       const link = response.data.data.whatsapp;
-      if (link) window.open(link, "_blank");
+      if (link && whatsappWindow) {
+        whatsappWindow.location.href = link;
+      } else if (link) {
+        window.open(link, "_blank");
+      } else {
+        whatsappWindow?.close();
+      }
       notify(link ? "Mensagem de adiantamento aberta no WhatsApp." : "Corte adiantado, mas cliente sem telefone valido.", "success");
-      await load();
+      await loadQueue(false);
     } catch (error) {
+      whatsappWindow?.close();
       notify(getFriendlyError(error), "error");
+    } finally {
+      setActionLoading(null);
     }
   }
 
   async function startService(id: string) {
     try {
+      setActionLoading(`start-${id}`);
       await api.post(`/queue/${id}/start`);
       notify("Atendimento iniciado.", "success");
-      await load();
+      await loadQueue(false);
     } catch (error) {
       notify(getFriendlyError(error), "error");
+    } finally {
+      setActionLoading(null);
     }
   }
 
   async function updateStatus(id: string, status: QueueItem["status"]) {
     try {
+      setActionLoading(`status-${id}`);
       await api.patch(`/queue/${id}/status`, { status });
       notify("Fila atualizada.", "success");
-      await load();
+      await loadQueue(false);
     } catch (error) {
       notify(getFriendlyError(error), "error");
+    } finally {
+      setActionLoading(null);
     }
   }
 
@@ -164,13 +223,16 @@ export function QueuePage() {
     }
 
     try {
+      setActionLoading(`finish-${finishItem.id}`);
       await api.post(`/queue/${finishItem.id}/finish`, { amount });
       notify("Atendimento finalizado e valor somado.", "success");
       setFinishItem(null);
       setFinishAmount("");
-      await load();
+      await loadQueue(false);
     } catch (error) {
       notify(getFriendlyError(error), "error");
+    } finally {
+      setActionLoading(null);
     }
   }
 
@@ -212,11 +274,13 @@ export function QueuePage() {
         description="Quem está na fila e tempo de espera"
         actions={
           <>
-            <Button variant="secondary" onClick={() => load()}>Atualizar</Button>
+            <Button variant="secondary" onClick={() => loadQueue()}>Atualizar</Button>
             {hasWaitingClient && !hasInServiceClient && !hasCalledClient ? (
-              <Button variant="secondary" onClick={() => callClient()}>Chamar proximo</Button>
+              <Button variant="secondary" onClick={() => callClient()} disabled={actionLoading === "call"}>
+                {actionLoading === "call" ? "Chamando..." : "Chamar proximo"}
+              </Button>
             ) : null}
-            <Button onClick={() => setFormOpen(true)}>Adicionar na Fila</Button>
+            <Button onClick={() => openQueueForm()}>Adicionar na Fila</Button>
           </>
         }
       />
@@ -228,11 +292,16 @@ export function QueuePage() {
       </div>
 
       <section className="space-y-4">
-        {loading ? (
+        {loading && items.length === 0 ? (
           <div className="rounded-[28px] border border-border bg-panel p-6 text-sm text-muted">Carregando fila...</div>
         ) : items.length === 0 ? (
           <div className="rounded-[28px] border border-border bg-panel p-6 text-sm text-muted">Fila vazia.</div>
-        ) : items.map((item) => (
+        ) : (
+          <>
+            {loading ? (
+              <div className="rounded-[28px] border border-border bg-panel p-4 text-sm text-muted">Atualizando fila...</div>
+            ) : null}
+            {items.map((item) => (
           <div key={item.id} className="rounded-[28px] border border-border bg-panel p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -269,26 +338,36 @@ export function QueuePage() {
                   <p className="font-semibold text-gold">{item.status === "CALLED" ? "Chamado" : `${item.estimatedMinutes} min`}</p>
                 </div>
                 {item.status === "WAITING" && isFutureQueueTime(item.scheduledFor) ? (
-                  <Button variant="secondary" onClick={() => advanceClient(item.id)}>Adiantar</Button>
+                  <Button variant="secondary" onClick={() => advanceClient(item.id)} disabled={actionLoading === `advance-${item.id}`}>
+                    {actionLoading === `advance-${item.id}` ? "Adiantando..." : "Adiantar"}
+                  </Button>
                 ) : null}
                 {item.status === "CALLED" ? (
-                  <Button onClick={() => startService(item.id)}>Iniciar atendimento</Button>
+                  <Button onClick={() => startService(item.id)} disabled={actionLoading === `start-${item.id}`}>
+                    {actionLoading === `start-${item.id}` ? "Iniciando..." : "Iniciar atendimento"}
+                  </Button>
                 ) : null}
                 {item.status === "IN_SERVICE" && hasWaitingClient ? (
                   <Button
                     onClick={() => callClient()}
-                    disabled={!summary.canCallNext}
+                    disabled={!summary.canCallNext || actionLoading === "call"}
                     title={summary.canCallNext ? "Chamar proximo cliente" : "Liberado quando faltar 10 minutos ou menos no atendimento atual"}
                   >
-                    {getCallNextLabel(item)}
+                    {actionLoading === "call" ? "Chamando..." : getCallNextLabel(item)}
                   </Button>
                 ) : null}
                 {item.status === "IN_SERVICE" ? <Button onClick={() => { setFinishItem(item); setFinishAmount(""); }}>Finalizar</Button> : null}
-                {["WAITING", "CALLED", "IN_SERVICE"].includes(item.status) ? <Button variant="secondary" onClick={() => updateStatus(item.id, "CANCELLED")}>Cancelar</Button> : null}
+                {["WAITING", "CALLED", "IN_SERVICE"].includes(item.status) ? (
+                  <Button variant="secondary" onClick={() => updateStatus(item.id, "CANCELLED")} disabled={actionLoading === `status-${item.id}`}>
+                    {actionLoading === `status-${item.id}` ? "Cancelando..." : "Cancelar"}
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>
-        ))}
+            ))}
+          </>
+        )}
       </section>
 
       <section className="grid gap-5 lg:grid-cols-2">
@@ -345,7 +424,7 @@ export function QueuePage() {
           <div className="w-full max-w-md rounded-[28px] border border-border bg-panel p-6 shadow-panel">
             <h2 className="text-lg font-bold">Adicionar na fila</h2>
             <select value={form.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })} className="mt-4 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-gold">
-              <option value="">Selecione o cliente</option>
+              <option value="">{clientsLoading ? "Carregando clientes..." : "Selecione o cliente"}</option>
               {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
             </select>
             <input value={form.serviceLabel} onChange={(event) => setForm({ ...form, serviceLabel: event.target.value })} placeholder="Ex: Corte degradê + barba" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-gold" />
@@ -362,7 +441,9 @@ export function QueuePage() {
             </p>
             <div className="mt-5 flex justify-end gap-3">
               <Button type="button" variant="secondary" onClick={() => setFormOpen(false)}>Cancelar</Button>
-              <Button type="submit">Adicionar</Button>
+              <Button type="submit" disabled={actionLoading === "submit"}>
+                {actionLoading === "submit" ? "Adicionando..." : "Adicionar"}
+              </Button>
             </div>
           </div>
         </form>
@@ -384,7 +465,9 @@ export function QueuePage() {
             />
             <div className="mt-5 flex justify-end gap-3">
               <Button type="button" variant="secondary" onClick={() => setFinishItem(null)}>Cancelar</Button>
-              <Button type="submit">Finalizar e somar</Button>
+              <Button type="submit" disabled={actionLoading === `finish-${finishItem.id}`}>
+                {actionLoading === `finish-${finishItem.id}` ? "Finalizando..." : "Finalizar e somar"}
+              </Button>
             </div>
           </div>
         </form>

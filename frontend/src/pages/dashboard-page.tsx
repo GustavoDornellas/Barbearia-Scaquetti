@@ -26,10 +26,12 @@ type DashboardData = {
   };
 };
 
+let cachedDashboardData: DashboardData | null = null;
+
 export function DashboardPage() {
   const notify = useToastStore((state) => state.notify);
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData | null>(cachedDashboardData);
+  const [loading, setLoading] = useState(!cachedDashboardData);
 
   useEffect(() => {
     let isMounted = true;
@@ -39,6 +41,7 @@ export function DashboardPage() {
 
       try {
         const response = await api.get<ApiEnvelope<DashboardData>>("/dashboard");
+        cachedDashboardData = response.data.data;
         if (isMounted) setData(response.data.data);
       } catch (error) {
         if (isMounted) notify(getFriendlyError(error), "error");
@@ -65,6 +68,7 @@ export function DashboardPage() {
   }, [data?.weeklyRevenue]);
   const flowTrendBuckets = data?.flowTrend?.buckets ?? [];
   const hasFlowTrendData = flowTrendBuckets.some((point) => point.count > 0);
+  const isInitialLoading = loading && !data;
 
   return (
     <div className="space-y-8">
@@ -74,15 +78,19 @@ export function DashboardPage() {
         description="Acompanhe o movimento da barbearia hoje"
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard label="Faturamento de hoje" value={`R$ ${data?.revenueToday.toFixed(2) ?? "0,00"}`} hint="Atendimentos finalizados hoje" />
-        <StatCard label="Clientes cadastrados" value={String(data?.totalClients ?? 0)} hint="Total de clientes no sistema" />
-        <StatCard
-          label="Produtos vendidos hoje"
-          value={String(data?.productsSoldToday ?? 0).padStart(2, "0")}
-          hint={(data?.productsSoldToday ?? 0) === 1 ? "1 unidade vendida hoje" : `${data?.productsSoldToday ?? 0} unidades vendidas hoje`}
-        />
-      </div>
+      {isInitialLoading ? (
+        <div className="rounded-[32px] border border-border bg-panel p-6 text-sm text-muted">Carregando indicadores...</div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-3">
+          <StatCard label="Faturamento de hoje" value={`R$ ${data?.revenueToday.toFixed(2) ?? "0,00"}`} hint="Atendimentos finalizados hoje" />
+          <StatCard label="Clientes cadastrados" value={String(data?.totalClients ?? 0)} hint="Total de clientes no sistema" />
+          <StatCard
+            label="Produtos vendidos hoje"
+            value={String(data?.productsSoldToday ?? 0).padStart(2, "0")}
+            hint={(data?.productsSoldToday ?? 0) === 1 ? "1 unidade vendida hoje" : `${data?.productsSoldToday ?? 0} unidades vendidas hoje`}
+          />
+        </div>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[1.6fr_0.8fr]">
         <section className="rounded-[32px] border border-border bg-panel p-6">
@@ -91,7 +99,7 @@ export function DashboardPage() {
             <p className="text-sm text-muted">Últimos 7 dias</p>
           </div>
           <div className="flex h-64 items-end gap-4">
-            {loading ? (
+            {isInitialLoading ? (
               <p className="text-sm text-muted">Carregando...</p>
             ) : data?.weeklyRevenue.every((point) => point.value === 0) ? (
               <p className="text-sm text-muted">Nenhum atendimento finalizado hoje.</p>
@@ -168,7 +176,7 @@ export function DashboardPage() {
           ) : null}
         </div>
 
-        {loading ? (
+        {isInitialLoading ? (
           <p className="mt-8 text-sm text-muted">Carregando...</p>
         ) : !hasFlowTrendData ? (
           <p className="mt-8 text-sm text-muted">Sem dados nos últimos 30 dias.</p>

@@ -5,7 +5,7 @@ describe("ClientsService", () => {
   it("creates client without classification", async () => {
     const tx = {
       client: {
-        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: "client-1" })
       }
     };
@@ -28,7 +28,7 @@ describe("ClientsService", () => {
   it("blocks duplicated active client by normalized phone", async () => {
     const tx = {
       client: {
-        findMany: jest.fn().mockResolvedValue([{ id: "client-1", phone: "(11) 99999-9999", email: null }]),
+        findFirst: jest.fn().mockResolvedValue({ id: "client-1", phone: "11999999999", email: null }),
         create: jest.fn()
       }
     };
@@ -43,7 +43,7 @@ describe("ClientsService", () => {
   it("rejects non-mobile phone numbers", async () => {
     const tx = {
       client: {
-        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn()
       }
     };

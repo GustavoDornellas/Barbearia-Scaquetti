@@ -83,6 +83,9 @@ model Client {
   queueEntries   QueueEntry[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+
+  @@index([isActive, createdAt])
+  @@index([isActive, lastVisitAt])
 }
 
 model Appointment {
@@ -103,6 +106,8 @@ model Appointment {
   updatedAt       DateTime               @updatedAt
 
   @@index([barberId, scheduledAt, endTime])
+  @@index([status, endTime])
+  @@index([status, scheduledAt])
 }
 
 model QueueEntry {
@@ -128,6 +133,8 @@ model QueueEntry {
   updatedAt        DateTime     @updatedAt
 
   @@index([status, position])
+  @@index([status, finishedAt])
+  @@index([status, scheduledFor])
 }
 
 model InventoryItem {

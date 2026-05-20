@@ -1,11 +1,11 @@
 # Deploy em Produção
 
-Este projeto está preparado para:
+Este guia mostra como publicar o sistema da Barbearia Scaquetti em produção usando:
 
 - Frontend React/Vite na Vercel.
 - Backend NestJS no Render.
 - PostgreSQL no Supabase.
-- Domínio via HostGator, apontado depois para Vercel e Render.
+- Domínio pela HostGator futuramente, ainda não usado nesta etapa.
 
 ## Arquitetura Final
 
@@ -18,25 +18,69 @@ Usuário
 
 Docker fica apenas para desenvolvimento local com `docker-compose.dev.yml`.
 
-## Variáveis de Ambiente
+## Ordem Recomendada
 
-### Vercel - Frontend
+1. Criar o banco no Supabase.
+2. Publicar o backend no Render.
+3. Publicar o frontend na Vercel.
+4. Testar login e fluxos principais.
+5. Conectar domínio na HostGator somente depois, quando quiser.
 
-Configure no projeto da Vercel:
+## Supabase
+
+### O que criar
+
+1. Entre no Supabase.
+2. Crie um novo projeto.
+3. Abra `Project Settings > Database > Connection string`.
+4. Copie as URLs de conexão PostgreSQL.
+
+### DATABASE_URL e DIRECT_URL
+
+Use no Render:
 
 ```text
-VITE_API_URL=https://SEU_BACKEND_RENDER.onrender.com/v1
+DATABASE_URL=
+DIRECT_URL=
 ```
 
-Depois que o domínio estiver pronto, pode trocar para:
+Recomendação prática:
+
+- `DATABASE_URL`: use a connection string com pooler do Supabase para a aplicação em produção.
+- `DIRECT_URL`: use uma conexão direta/session pooler compatível com migrations do Prisma.
+
+Diferenças:
+
+- Direct Connection: conexão direta com o banco. É útil para migrations e tarefas administrativas, mas pode consumir mais conexões.
+- Session Pooler: mantém uma sessão por conexão e costuma ser mais compatível com ferramentas como Prisma Migrate.
+- Transaction Pooler: reutiliza conexões por transação e ajuda em apps com muitas conexões, mas pode ter limitações com prepared statements e algumas operações de migration.
+
+O schema Prisma já usa:
+
+```prisma
+url       = env("DATABASE_URL")
+directUrl = env("DIRECT_URL")
+```
+
+Por isso o deploy consegue usar `DATABASE_URL` para runtime e `DIRECT_URL` para migrations.
+
+## Render - Backend
+
+O arquivo `render.yaml` já está preparado para o backend.
+
+Configuração principal:
 
 ```text
-VITE_API_URL=https://api.seudominio.com/v1
+Root Directory: backend
+Build Command: npm ci --include=dev && npm run build
+Pre-Deploy Command: npm run prisma:migrate:deploy
+Start Command: npm run start:prod
+Health Check Path: /v1/health
 ```
 
-### Render - Backend
+### Variáveis de ambiente no Render
 
-Configure no Web Service do Render:
+Configure no serviço do Render:
 
 ```text
 NODE_ENV=production
@@ -53,75 +97,89 @@ RATE_LIMIT_PER_MINUTE=120
 PRISMA_CLIENT_ENGINE_TYPE=binary
 ```
 
-Use as URLs reais do Supabase em `DATABASE_URL` e `DIRECT_URL`.
-
-Recomendação:
-
-- `DATABASE_URL`: URL pooled/transaction pooler do Supabase, quando disponível.
-- `DIRECT_URL`: URL direta do banco Supabase, usada pelo Prisma Migrate.
-
 Gere os JWT secrets com:
 
 ```bash
 openssl rand -base64 64
 ```
 
-## Supabase
+Use um valor diferente para `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET`.
 
-1. Crie o projeto no Supabase.
-2. Copie as connection strings PostgreSQL.
-3. Configure `DATABASE_URL` e `DIRECT_URL` no Render.
-4. Não coloque essas URLs no GitHub.
+### Passo a passo no Render
 
-## Render
-
-O arquivo `render.yaml` define:
-
-- Root directory: `backend`
-- Build command: `npm ci --include=dev && npm run build`
-- Pre-deploy command: `npm run prisma:migrate:deploy`
-- Start command: `npm run start:prod`
-- Healthcheck: `/v1/health`
-- Runtime: Node
-
-Passos:
-
-1. No Render, crie um Blueprint ou Web Service apontando para este repositório.
-2. Se usar Web Service manual, configure `Root Directory` como `backend`.
-3. Configure as variáveis de ambiente listadas acima.
-4. Faça o primeiro deploy.
-5. Verifique se `/v1/health` retorna `success: true`.
-
-## Vercel
-
-Configure o projeto da Vercel apontando para a pasta `frontend`.
-
-Configurações:
+1. Acesse o Render.
+2. Clique em `New`.
+3. Escolha `Blueprint` se quiser usar o `render.yaml`, ou `Web Service` para configurar manualmente.
+4. Conecte o repositório do GitHub.
+5. Se configurar manualmente, coloque:
+   - Root Directory: `backend`
+   - Build Command: `npm ci --include=dev && npm run build`
+   - Pre-Deploy Command: `npm run prisma:migrate:deploy`
+   - Start Command: `npm run start:prod`
+   - Health Check Path: `/v1/health`
+6. Configure todas as variáveis de ambiente.
+7. Faça o deploy.
+8. Teste:
 
 ```text
-Framework Preset: Vite
-Root Directory: frontend
-Build Command: npm run build
-Output Directory: dist
-Install Command: npm ci
+https://SEU_BACKEND.onrender.com/v1/health
 ```
 
-O arquivo `frontend/vercel.json` garante fallback de SPA para rotas como `/clientes`, `/estoque` e `/login`.
+A resposta deve indicar sucesso e banco conectado.
 
-Passos:
+## Vercel - Frontend
 
-1. Importe o repositório na Vercel.
-2. Selecione `frontend` como Root Directory.
-3. Configure `VITE_API_URL`.
-4. Faça o deploy.
-5. Acesse as rotas internas diretamente para confirmar o SPA routing.
+O arquivo `frontend/vercel.json` já configura:
+
+- install command com `npm ci`;
+- build command com `npm run build`;
+- output directory `dist`;
+- fallback SPA para rotas internas.
+
+### Variável de ambiente na Vercel
+
+Configure no projeto da Vercel:
+
+```text
+VITE_API_URL=https://SEU_BACKEND.onrender.com/v1
+```
+
+Enquanto não tiver domínio, use a URL padrão do Render.
+
+Quando tiver domínio, troque para algo como:
+
+```text
+VITE_API_URL=https://api.seudominio.com/v1
+```
+
+### Passo a passo na Vercel
+
+1. Acesse a Vercel.
+2. Clique em `Add New > Project`.
+3. Importe o repositório do GitHub.
+4. Configure:
+   - Framework Preset: `Vite`
+   - Root Directory: `frontend`
+   - Install Command: `npm ci`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+5. Adicione a variável `VITE_API_URL`.
+6. Faça o deploy.
+7. Teste rotas internas como:
+   - `/login`
+   - `/clientes`
+   - `/estoque`
+
+O fallback do `vercel.json` evita erro 404 ao recarregar uma rota interna.
 
 ## HostGator / Domínio
 
-Depois que Render e Vercel estiverem funcionando:
+Nesta etapa o domínio ainda não será usado.
+
+Quando for conectar:
 
 1. Aponte o domínio principal para a Vercel.
-2. Aponte o subdomínio `api.seudominio.com` para o Render.
+2. Aponte um subdomínio como `api.seudominio.com` para o Render.
 3. Atualize no Render:
 
 ```text
@@ -134,28 +192,45 @@ FRONTEND_URL=https://seudominio.com
 VITE_API_URL=https://api.seudominio.com/v1
 ```
 
-5. Redeploy frontend e backend.
+5. Faça redeploy do frontend e backend.
+
+## Segurança
+
+Antes de publicar, confirme:
+
+- `.env` real não está no GitHub.
+- `node_modules`, `dist`, `build`, logs e caches não estão no GitHub.
+- `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET` têm 64+ caracteres.
+- `FRONTEND_URL` usa HTTPS em produção.
+- `VITE_API_URL` usa HTTPS e termina em `/v1`.
+- `DATABASE_URL` e `DIRECT_URL` estão apenas no Render.
+- Cookies estão `httpOnly`.
+- Cookies usam `secure=true` em produção.
+- CORS permite apenas a URL do frontend.
+- O endpoint `/v1/health` está funcionando.
 
 ## Checklist Final
 
-- [ ] `.env` real não está commitado.
-- [ ] `node_modules`, `dist`, `build`, logs e caches não estão commitados.
-- [ ] Supabase criado e connection strings copiadas.
-- [ ] Render com todas as variáveis configuradas.
-- [ ] `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET` têm 64+ caracteres.
-- [ ] `FRONTEND_URL` usa HTTPS e não usa localhost em produção.
-- [ ] Vercel com `VITE_API_URL` usando HTTPS e terminando em `/v1`.
-- [ ] Render executou `prisma migrate deploy`.
-- [ ] `/v1/health` retorna sucesso.
-- [ ] Login funciona online.
-- [ ] Clientes, fila, agendamentos, estoque e dashboard persistem no Supabase.
-- [ ] Domínio final atualizado em Vercel, Render e HostGator.
+- [ ] Projeto criado no Supabase.
+- [ ] Connection strings copiadas.
+- [ ] Backend criado no Render.
+- [ ] Variáveis do Render configuradas.
+- [ ] Migrations aplicadas com `prisma migrate deploy`.
+- [ ] Healthcheck `/v1/health` funcionando.
+- [ ] Frontend criado na Vercel.
+- [ ] `VITE_API_URL` configurado na Vercel.
+- [ ] Login funcionando online.
+- [ ] Clientes persistindo no Supabase.
+- [ ] Fila persistindo no Supabase.
+- [ ] Estoque persistindo no Supabase.
+- [ ] Dashboard calculando faturamento real.
+- [ ] Rotas internas funcionando ao recarregar a página.
 
 ## Validação de Produção
 
-Após publicar:
+Depois do deploy:
 
-1. Acesse o frontend na Vercel.
+1. Acesse o frontend publicado na Vercel.
 2. Faça login.
 3. Cadastre um cliente.
 4. Adicione cliente à fila.
@@ -163,5 +238,5 @@ Após publicar:
 6. Cadastre produto no estoque.
 7. Registre saída de produto.
 8. Confirme dashboard com faturamento e produtos vendidos.
-9. Recarregue a página em rotas internas, como `/clientes` e `/estoque`.
+9. Recarregue `/clientes` e `/estoque` diretamente no navegador.
 10. Verifique logs do Render para erros.

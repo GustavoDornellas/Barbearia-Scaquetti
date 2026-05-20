@@ -11,6 +11,7 @@ import { InventoryModule } from "./modules/inventory/inventory.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { UsersModule } from "./modules/users/users.module";
 import { CsrfTokenMiddleware } from "./shared/middleware/csrf-token.middleware";
+import { PerformanceMiddleware } from "./shared/middleware/performance.middleware";
 import { validateEnv } from "./shared/config/env.validation";
 import { HealthController } from "./health.controller";
 
@@ -43,6 +44,6 @@ import { HealthController } from "./health.controller";
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(CsrfTokenMiddleware).forRoutes("*");
+    consumer.apply(PerformanceMiddleware, CsrfTokenMiddleware).forRoutes("*");
   }
 }
