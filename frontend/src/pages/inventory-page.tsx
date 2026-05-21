@@ -48,6 +48,7 @@ function makeSku(name: string, brand: string) {
 export function InventoryPage() {
   const notify = useToastStore((state) => state.notify);
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [search, setSearch] = useState({ name: "", brand: "" });
   const [summary, setSummary] = useState({ totalItems: 0, lowStock: 0, marketValue: 0 });
   const [loading, setLoading] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -163,6 +164,12 @@ export function InventoryPage() {
     }
   }
 
+  const filteredItems = items.filter((item) => {
+    const nameMatch = item.name.toLowerCase().includes(search.name.toLowerCase());
+    const brandMatch = item.category.toLowerCase().includes(search.brand.toLowerCase());
+    return nameMatch && brandMatch;
+  });
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -178,6 +185,39 @@ export function InventoryPage() {
       </div>
 
       <section className="overflow-hidden rounded-[32px] border border-border bg-panel">
+        <div className="flex flex-col gap-3 border-b border-border px-6 py-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-1 flex-col gap-3 md:flex-row">
+            <div className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2">
+              <svg className="h-4 w-4 shrink-0 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              <input
+                value={search.name}
+                onChange={(e) => setSearch({ ...search, name: e.target.value })}
+                placeholder="Buscar por nome..."
+                className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
+              />
+              {search.name && (
+                <button type="button" onClick={() => setSearch({ ...search, name: "" })} className="text-muted hover:text-text">✕</button>
+              )}
+            </div>
+            <div className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2">
+              <svg className="h-4 w-4 shrink-0 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+              <input
+                value={search.brand}
+                onChange={(e) => setSearch({ ...search, brand: e.target.value })}
+                placeholder="Buscar por marca..."
+                className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
+              />
+              {search.brand && (
+                <button type="button" onClick={() => setSearch({ ...search, brand: "" })} className="text-muted hover:text-text">✕</button>
+              )}
+            </div>
+          </div>
+          {(search.name || search.brand) && (
+            <p className="text-xs text-muted md:text-right">
+              {filteredItems.length} resultado{filteredItems.length !== 1 ? "s" : ""}
+            </p>
+          )}
+        </div>
         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1.4fr] gap-3 border-b border-border px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted">
           <span>Produto</span>
           <span>Marca</span>
@@ -188,9 +228,11 @@ export function InventoryPage() {
         </div>
         {loading ? (
           <div className="px-6 py-10 text-sm text-muted">Carregando estoque...</div>
-        ) : items.length === 0 ? (
-          <div className="px-6 py-10 text-sm text-muted">Nenhum produto cadastrado.</div>
-        ) : items.map((item) => (
+        ) : filteredItems.length === 0 ? (
+          <div className="px-6 py-10 text-sm text-muted">
+            {items.length === 0 ? "Nenhum produto cadastrado." : "Nenhum produto encontrado para essa busca."}
+          </div>
+        ) : filteredItems.map((item) => (
           <div key={item.id} className="grid grid-cols-1 gap-3 border-b border-border px-6 py-5 text-sm lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1.4fr]">
             <div>
               <div className="font-semibold">{item.name}</div>

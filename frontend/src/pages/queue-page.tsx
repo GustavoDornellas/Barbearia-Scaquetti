@@ -38,6 +38,16 @@ export function QueuePage() {
   const notify = useToastStore((state) => state.notify);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
+  const [savedStyles, setSavedStyles] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("barbearia:service-styles");
+      return stored ? JSON.parse(stored) : ["Corte degradê", "Corte navalhado", "Corte + barba", "Barba"];
+    } catch {
+      return ["Corte degradê", "Corte navalhado", "Corte + barba", "Barba"];
+    }
+  });
+  const [newStyleInput, setNewStyleInput] = useState("");
+  const [showNewStyleInput, setShowNewStyleInput] = useState(false);
   const [summary, setSummary] = useState({
     attendedToday: 0,
     revenueToday: 0,
@@ -53,6 +63,26 @@ export function QueuePage() {
   const [finishAmount, setFinishAmount] = useState("");
   const [clientsLoading, setClientsLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  function saveStyles(styles: string[]) {
+    setSavedStyles(styles);
+    localStorage.setItem("barbearia:service-styles", JSON.stringify(styles));
+  }
+
+  function addNewStyle() {
+    const trimmed = newStyleInput.trim();
+    if (!trimmed) return;
+    if (!savedStyles.includes(trimmed)) {
+      saveStyles([...savedStyles, trimmed]);
+    }
+    setForm({ ...form, serviceLabel: trimmed });
+    setNewStyleInput("");
+    setShowNewStyleInput(false);
+  }
+
+  function selectStyle(style: string) {
+    setForm({ ...form, serviceLabel: style });
+  }
 
   function formatQueueTime(value: string) {
     return new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -427,7 +457,50 @@ export function QueuePage() {
               <option value="">{clientsLoading ? "Carregando clientes..." : "Selecione o cliente"}</option>
               {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
             </select>
-            <input value={form.serviceLabel} onChange={(event) => setForm({ ...form, serviceLabel: event.target.value })} placeholder="Ex: Corte degradê + barba" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-gold" />
+
+            <div className="mt-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-[0.22em] text-gold/80">Estilo do corte</p>
+              <div className="flex flex-wrap gap-2">
+                {savedStyles.map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    onClick={() => selectStyle(style)}
+                    className={`rounded-2xl border px-3 py-2 text-sm transition-colors ${
+                      form.serviceLabel === style
+                        ? "border-gold bg-gold/10 text-gold"
+                        : "border-border bg-background text-muted hover:border-gold/50"
+                    }`}
+                  >
+                    {style}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowNewStyleInput(!showNewStyleInput)}
+                  className="rounded-2xl border border-dashed border-border bg-background px-3 py-2 text-sm text-muted hover:border-gold/50"
+                >
+                  + Nova marca
+                </button>
+              </div>
+              {showNewStyleInput && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={newStyleInput}
+                    onChange={(e) => setNewStyleInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addNewStyle())}
+                    placeholder="Digite o estilo do corte"
+                    className="flex-1 rounded-2xl border border-border bg-background px-4 py-2 text-sm outline-none focus:border-gold"
+                    autoFocus
+                  />
+                  <Button type="button" onClick={addNewStyle}>Adicionar</Button>
+                  <Button type="button" variant="secondary" onClick={() => { setShowNewStyleInput(false); setNewStyleInput(""); }}>Fechar</Button>
+                </div>
+              )}
+              {form.serviceLabel ? (
+                <p className="mt-2 text-xs text-muted">Selecionado: <span className="text-gold font-semibold">{form.serviceLabel}</span></p>
+              ) : null}
+            </div>
             <input type="number" min="5" value={form.serviceDuration} onChange={(event) => setForm({ ...form, serviceDuration: event.target.value })} placeholder="Tempo em minutos" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-gold" />
             <label className="mt-4 block text-xs font-bold uppercase tracking-[0.22em] text-gold/80">Horario do corte</label>
             <input

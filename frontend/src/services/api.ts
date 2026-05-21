@@ -45,6 +45,26 @@ api.interceptors.response.use(
     const status = error.response?.status;
     persistCsrfToken(error.response?.headers?.["x-csrf-token"]);
 
+    // Se o próprio refresh falhou com 403, sessão expirou — redireciona para login
+    if (status === 403 && original?.url?.includes("/auth/refresh")) {
+      useToastStore.getState().notify("Sessão expirada. Entre de novo.", "error");
+      window.location.href = "/login";
+      throw error;
+    }
+
+    // 401 em qualquer rota que não seja login/refresh — tenta renovar o token
+    if (status === 401 && !original._retry && !original.url?.includes("/auth/login") && !original.url?.includes("/auth/refresh")) {
+      original._retry = true;
+      try {
+        await api.post("/auth/refresh");
+        return api(original);
+      } catch {
+        useToastStore.getState().notify("Entre de novo para continuar.", "error");
+        window.location.href = "/login";
+      }
+    }
+
+    // 403 em outras rotas — tenta renovar CSRF e retentar uma vez
     if (status === 403 && !original?._csrfRetry) {
       original._csrfRetry = true;
       try {
@@ -54,17 +74,6 @@ api.interceptors.response.use(
         return api(original);
       } catch {
         // Fall through to the friendly error returned by the caller.
-      }
-    }
-
-    if (status === 401 && !original._retry && !original.url?.includes("/auth/login") && !original.url?.includes("/auth/refresh")) {
-      original._retry = true;
-      try {
-        await api.post("/auth/refresh");
-        return api(original);
-      } catch {
-        useToastStore.getState().notify("Entre de novo para continuar.", "error");
-        window.location.href = "/login";
       }
     }
 

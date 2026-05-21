@@ -208,7 +208,7 @@ export class DashboardService {
     return appointments.map((appointment) => ({
       id: appointment.id,
       clientName: appointment.client.name,
-      serviceLabel: appointment.serviceType,
+      serviceLabel: appointment.notes ?? appointment.serviceType,
       price: Number(appointment.price),
       finishedAt: appointment.endTime.toISOString(),
       status: "FINALIZADO"
