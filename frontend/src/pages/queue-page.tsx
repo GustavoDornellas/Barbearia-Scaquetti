@@ -91,8 +91,8 @@ export function QueuePage() {
 
   async function loadFlowTrend() {
     try {
-      const dashboardResponse = await api.get("/dashboard");
-      setFlowTrend(dashboardResponse.data.data.flowTrend?.buckets ?? emptyFlowTrend);
+      const response = await api.get("/dashboard/flow-trend");
+      setFlowTrend(response.data.data.buckets ?? emptyFlowTrend);
     } catch (error) {
       notify(getFriendlyError(error), "error");
     }

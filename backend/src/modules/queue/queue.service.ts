@@ -16,6 +16,7 @@ export class QueueService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list() {
+    const _t0 = Date.now();
     const todayRange = getTodayRangeInBrazil();
 
     const [items, finishedToday, appointmentsToday, productSalesToday] = await Promise.all([
@@ -54,7 +55,7 @@ export class QueueService {
     const totalWaitMinutes = remainingInServiceMinutes + pendingWaitMinutes;
     const canCallNext = this.canCallNextFromActiveItems(activeInServiceItems, waitingItems, calledItems, now);
 
-    return {
+    const result = {
       items: items.map((item) => this.buildQueueItemResponse(item, now)),
       summary: {
         attendedToday: finishedToday,
@@ -64,10 +65,14 @@ export class QueueService {
         callNextAvailableInMinutes: this.getCallNextAvailableInMinutes(activeInServiceItems, waitingItems, calledItems, now)
       }
     };
+
+    console.log(`[queue:list] items=${result.items.length} total=${Date.now() - _t0}ms`);
+    return result;
   }
 
   async create(payload: QueueInput, actorUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const _t0 = Date.now();
+    const result = await this.prisma.$transaction(async (tx) => {
       const client = await tx.client.findFirst({ where: { id: payload.clientId, isActive: true } });
       if (!client) throw new NotFoundException("Cliente nao encontrado");
 
@@ -115,15 +120,18 @@ export class QueueService {
       if (!orderedCreated) throw new NotFoundException("Item da fila nao encontrado apos ordenar");
 
       return this.buildQueueItemResponse(orderedCreated);
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    });
+    console.log(`[queue:create] total=${Date.now() - _t0}ms`);
+    return result;
   }
 
   async updateStatus(id: string, status: QueueStatus) {
+    const _t0 = Date.now();
     if (status === QueueStatus.CALLED || status === QueueStatus.IN_SERVICE) {
       throw new BadRequestException("Use a acao correta da fila para chamar ou iniciar atendimento");
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const entry = await tx.queueEntry.findUnique({ where: { id }, include: { client: true, barber: true } });
       if (!entry) throw new NotFoundException("Item da fila nao encontrado");
 
@@ -144,10 +152,13 @@ export class QueueService {
 
       return this.buildQueueItemResponse(updated);
     });
+    console.log(`[queue:updateStatus] status=${status} total=${Date.now() - _t0}ms`);
+    return result;
   }
 
   async finish(id: string, payload: FinishQueueInput) {
-    return this.prisma.$transaction(async (tx) => {
+    const _t0 = Date.now();
+    const result = await this.prisma.$transaction(async (tx) => {
       const entry = await tx.queueEntry.findUnique({ where: { id }, include: { client: true, barber: true, appointment: true } });
       if (!entry) throw new NotFoundException("Item da fila nao encontrado");
       if (entry.status !== QueueStatus.IN_SERVICE) {
@@ -182,11 +193,14 @@ export class QueueService {
       await this.reorderActiveQueue(tx);
 
       return this.buildQueueItemResponse(updated);
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    });
+    console.log(`[queue:finish] amount=${payload.amount} total=${Date.now() - _t0}ms`);
+    return result;
   }
 
   async advance(id: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const _t0 = Date.now();
+    const result = await this.prisma.$transaction(async (tx) => {
       const entry = await tx.queueEntry.findUnique({ where: { id }, include: { client: true, barber: true } });
       if (!entry) throw new NotFoundException("Item da fila nao encontrado");
       if (entry.status !== QueueStatus.WAITING) {
@@ -212,11 +226,14 @@ export class QueueService {
         new Date(),
         `Ola, ${reordered.client.name}! Consegui antecipar seu atendimento na Barbearia Scaquetti. Voce consegue vir agora? Tempo estimado: ${reordered.estimatedMinutes} minutos.`
       );
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    });
+    console.log(`[queue:advance] total=${Date.now() - _t0}ms`);
+    return result;
   }
 
   async callNext() {
-    return this.prisma.$transaction(async (tx) => {
+    const _t0 = Date.now();
+    const result = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
       const activeInServiceItems = await tx.queueEntry.findMany({
         where: { status: QueueStatus.IN_SERVICE },
@@ -260,11 +277,14 @@ export class QueueService {
         now,
         `Ola, ${updated.client.name}! Seu atendimento na Barbearia Scaquetti sera em aproximadamente 10 minutos. Pode se preparar para vir.`
       );
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    });
+    console.log(`[queue:callNext] total=${Date.now() - _t0}ms`);
+    return result;
   }
 
   async startService(id: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const _t0 = Date.now();
+    const result = await this.prisma.$transaction(async (tx) => {
       const entry = await tx.queueEntry.findUnique({ where: { id }, include: { client: true, barber: true } });
       if (!entry) throw new NotFoundException("Item da fila nao encontrado");
       if (entry.status !== QueueStatus.CALLED && entry.status !== QueueStatus.WAITING) {
@@ -302,7 +322,9 @@ export class QueueService {
       await this.reorderActiveQueue(tx);
 
       return this.buildQueueItemResponse(updated, now);
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    });
+    console.log(`[queue:startService] total=${Date.now() - _t0}ms`);
+    return result;
   }
 
   async remove(id: string) {
@@ -311,36 +333,53 @@ export class QueueService {
   }
 
   private async reorderActiveQueue(tx: Prisma.TransactionClient) {
+    const _t0 = Date.now();
+
     const activeQueue = await tx.queueEntry.findMany({
       where: { status: { in: activeStatuses } },
       orderBy: [{ scheduledFor: "asc" }, { position: "asc" }]
     });
+
+    const _t1 = Date.now();
 
     let accumulatedWait = 0;
     const now = Date.now();
     const inService = activeQueue.filter((item) => item.status === QueueStatus.IN_SERVICE);
     const called = activeQueue.filter((item) => item.status === QueueStatus.CALLED);
     const waiting = activeQueue.filter((item) => item.status === QueueStatus.WAITING);
+
     for (const item of [...inService, ...called]) {
       const progress = this.calculateServiceProgress(item, new Date(now));
       accumulatedWait += item.status === QueueStatus.IN_SERVICE ? progress.remainingMinutes : item.serviceDuration;
     }
 
+    // Fase 1: calcula todas as posições e tempos em JS puro (sem IO)
+    const updates: Array<{ id: string; position: number; estimatedMinutes: number }> = [];
     for (const [index, item] of waiting.entries()) {
-      const baseWait = item.status === QueueStatus.IN_SERVICE
-        ? 0
-        : Math.max(0, Math.ceil((item.scheduledFor.getTime() - now) / 60000));
+      const baseWait = Math.max(0, Math.ceil((item.scheduledFor.getTime() - now) / 60000));
       const estimatedMinutes = baseWait + accumulatedWait;
-      await tx.queueEntry.update({
-        where: { id: item.id },
-        data: {
-          position: index + 1,
-          estimatedMinutes
-        }
-      });
-
+      updates.push({ id: item.id, position: index + 1, estimatedMinutes });
       accumulatedWait += item.serviceDuration;
     }
+
+    const _t2 = Date.now();
+
+    // Fase 2: dispara todos os UPDATEs em paralelo — 1 round-trip independente do tamanho da fila
+    if (updates.length > 0) {
+      await Promise.all(
+        updates.map(({ id, position, estimatedMinutes }) =>
+          tx.queueEntry.update({
+            where: { id },
+            data: { position, estimatedMinutes }
+          })
+        )
+      );
+    }
+
+    const _t3 = Date.now();
+    console.log(
+      `[queue:reorder] waiting=${waiting.length} updates=${updates.length} find=${_t1 - _t0}ms calc=${_t2 - _t1}ms db=${_t3 - _t2}ms total=${_t3 - _t0}ms`
+    );
   }
 
   private buildQueueItemResponse(item: QueueEntryWithRelations, now = new Date(), customWhatsappMessage?: string) {

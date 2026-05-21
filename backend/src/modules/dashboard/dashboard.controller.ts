@@ -11,4 +11,9 @@ export class DashboardController {
   getOverview() {
     return this.dashboardService.getOverview();
   }
+
+  @Get("flow-trend")
+  getFlowTrend() {
+    return this.dashboardService.getFlowTrend();
+  }
 }

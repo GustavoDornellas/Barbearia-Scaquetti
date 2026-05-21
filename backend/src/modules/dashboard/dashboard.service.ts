@@ -39,6 +39,12 @@ export class DashboardService {
     { label: "20H", start: 20, end: 23 }
   ];
 
+  async getFlowTrend() {
+    const last30DaysRange = getLast30DaysRangeInBrazil();
+    const buckets = await this.buildFlowTrendBuckets(last30DaysRange.start, last30DaysRange.end);
+    return this.buildFlowTrendResponse(buckets);
+  }
+
   async getOverview() {
     const todayRange = getTodayRangeInBrazil();
     const last7DaysRange = getLast7DaysRangeInBrazil();
