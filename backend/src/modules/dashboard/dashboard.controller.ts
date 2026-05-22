@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, UseGuards } from "@nestjs/common";
+import { Controller, Get, Inject, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../shared/guards/jwt-auth.guard";
 import { DashboardService } from "./dashboard.service";
 
@@ -15,5 +15,10 @@ export class DashboardController {
   @Get("flow-trend")
   getFlowTrend() {
     return this.dashboardService.getFlowTrend();
+  }
+
+  @Get("cash-closing")
+  getCashClosing(@Query("date") date?: string) {
+    return this.dashboardService.getCashClosing(date);
   }
 }

@@ -3,6 +3,20 @@ import { PageHeader } from "../components/ui/page-header";
 import { StatCard } from "../components/ui/stat-card";
 import { api, ApiEnvelope, getFriendlyError } from "../services/api";
 import { useToastStore } from "../store/toast-store";
+import * as XLSX from "xlsx";
+
+type CashClosingData = {
+  date: string;
+  summary: {
+    totalAppointments: number;
+    revenueAppointments: number;
+    totalProductsSold: number;
+    revenueProducts: number;
+    totalRevenue: number;
+  };
+  appointments: Array<{ time: string; client: string; service: string; price: number }>;
+  products: Array<{ name: string; brand: string; quantity: number; unitPrice: number; total: number }>;
+};
 
 type DashboardData = {
   revenueToday: number;
@@ -32,6 +46,70 @@ export function DashboardPage() {
   const notify = useToastStore((state) => state.notify);
   const [data, setData] = useState<DashboardData | null>(cachedDashboardData);
   const [loading, setLoading] = useState(!cachedDashboardData);
+  const [cashClosingOpen, setCashClosingOpen] = useState(false);
+  const [cashClosingDate, setCashClosingDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [cashClosingData, setCashClosingData] = useState<CashClosingData | null>(null);
+  const [cashClosingLoading, setCashClosingLoading] = useState(false);
+
+  async function openCashClosing() {
+    setCashClosingOpen(true);
+    await loadCashClosing(cashClosingDate);
+  }
+
+  async function loadCashClosing(date: string) {
+    setCashClosingLoading(true);
+    try {
+      const response = await api.get(`/dashboard/cash-closing?date=${date}`);
+      setCashClosingData(response.data.data);
+    } catch (error) {
+      notify(getFriendlyError(error), "error");
+    } finally {
+      setCashClosingLoading(false);
+    }
+  }
+
+  function exportToExcel() {
+    if (!cashClosingData) return;
+
+    const wb = XLSX.utils.book_new();
+
+    // Aba 1: Resumo
+    const resumoData = [
+      ["FECHAMENTO DE CAIXA", cashClosingData.date],
+      [],
+      ["RESUMO"],
+      ["Atendimentos realizados", cashClosingData.summary.totalAppointments],
+      ["Receita de atendimentos", `R$ ${cashClosingData.summary.revenueAppointments.toFixed(2)}`],
+      ["Produtos vendidos", cashClosingData.summary.totalProductsSold],
+      ["Receita de produtos", `R$ ${cashClosingData.summary.revenueProducts.toFixed(2)}`],
+      [],
+      ["TOTAL GERAL", `R$ ${cashClosingData.summary.totalRevenue.toFixed(2)}`]
+    ];
+    const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
+    wsResumo["!cols"] = [{ wch: 30 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
+
+    // Aba 2: Atendimentos
+    const atendimentosHeader = [["Horário", "Cliente", "Serviço", "Valor (R$)"]];
+    const atendimentosRows = cashClosingData.appointments.map((a) => [
+      a.time, a.client, a.service, a.price
+    ]);
+    const wsAtendimentos = XLSX.utils.aoa_to_sheet([...atendimentosHeader, ...atendimentosRows]);
+    wsAtendimentos["!cols"] = [{ wch: 10 }, { wch: 25 }, { wch: 25 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, wsAtendimentos, "Atendimentos");
+
+    // Aba 3: Produtos
+    const produtosHeader = [["Produto", "Marca", "Quantidade", "Valor Unit. (R$)", "Total (R$)"]];
+    const produtosRows = cashClosingData.products.map((p) => [
+      p.name, p.brand, p.quantity, p.unitPrice, p.total
+    ]);
+    const wsProdutos = XLSX.utils.aoa_to_sheet([...produtosHeader, ...produtosRows]);
+    wsProdutos["!cols"] = [{ wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 18 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsProdutos, "Produtos");
+
+    const dateFormatted = cashClosingDate.split("-").reverse().join("-");
+    XLSX.writeFile(wb, `fechamento-caixa-${dateFormatted}.xlsx`);
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -72,11 +150,109 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        eyebrow="Hoje"
-        title="Visão geral do dia"
-        description="Acompanhe o movimento da barbearia hoje"
-      />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <PageHeader
+          eyebrow="Hoje"
+          title="Visão geral do dia"
+          description="Acompanhe o movimento da barbearia hoje"
+        />
+        <button
+          onClick={openCashClosing}
+          className="flex items-center gap-2 rounded-2xl border border-gold/40 bg-gold/10 px-4 py-2.5 text-sm font-semibold text-gold transition hover:bg-gold/20 lg:mb-1 self-start lg:self-auto"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          Fechar Caixa
+        </button>
+      </div>
+
+      {cashClosingOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/60 p-4 md:items-center md:justify-center">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-border bg-panel p-6 shadow-panel">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold">Fechamento de Caixa</h2>
+              <button onClick={() => setCashClosingOpen(false)} className="text-muted hover:text-text text-xl">✕</button>
+            </div>
+
+            <div className="flex items-center gap-3 mb-5">
+              <input
+                type="date"
+                value={cashClosingDate}
+                onChange={(e) => { setCashClosingDate(e.target.value); loadCashClosing(e.target.value); }}
+                className="rounded-2xl border border-border bg-background px-4 py-2 text-sm outline-none focus:border-gold"
+              />
+              <span className="text-sm text-muted">Selecione a data</span>
+            </div>
+
+            {cashClosingLoading ? (
+              <p className="text-sm text-muted py-8 text-center">Carregando...</p>
+            ) : cashClosingData ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 mb-5 sm:grid-cols-4">
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Atendimentos</p>
+                    <p className="text-xl font-bold">{cashClosingData.summary.totalAppointments}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Receita cortes</p>
+                    <p className="text-xl font-bold text-gold">R$ {cashClosingData.summary.revenueAppointments.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Produtos</p>
+                    <p className="text-xl font-bold">{cashClosingData.summary.totalProductsSold}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Total geral</p>
+                    <p className="text-xl font-bold text-gold">R$ {cashClosingData.summary.totalRevenue.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                {cashClosingData.appointments.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold/80 mb-2">Atendimentos</p>
+                    <div className="space-y-2">
+                      {cashClosingData.appointments.map((a, i) => (
+                        <div key={i} className="flex justify-between text-sm border-b border-border pb-2">
+                          <span className="text-muted w-12">{a.time}</span>
+                          <span className="flex-1 px-3">{a.client}</span>
+                          <span className="text-muted flex-1">{a.service}</span>
+                          <span className="text-gold font-semibold">R$ {a.price.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {cashClosingData.products.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold/80 mb-2">Produtos vendidos</p>
+                    <div className="space-y-2">
+                      {cashClosingData.products.map((p, i) => (
+                        <div key={i} className="flex justify-between text-sm border-b border-border pb-2">
+                          <span className="flex-1">{p.name}</span>
+                          <span className="text-muted px-3">{p.quantity}x</span>
+                          <span className="text-gold font-semibold">R$ {p.total.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {cashClosingData.appointments.length === 0 && cashClosingData.products.length === 0 && (
+                  <p className="text-sm text-muted text-center py-4">Nenhum movimento nesta data.</p>
+                )}
+
+                <button
+                  onClick={exportToExcel}
+                  disabled={cashClosingData.summary.totalRevenue === 0}
+                  className="mt-2 w-full rounded-2xl bg-gold py-3 text-sm font-bold text-black transition hover:bg-gold/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Exportar Excel (.xlsx)
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
 
       {isInitialLoading ? (
         <div className="rounded-[32px] border border-border bg-panel p-6 text-sm text-muted">Carregando indicadores...</div>

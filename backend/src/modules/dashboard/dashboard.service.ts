@@ -7,6 +7,7 @@ import {
   getLast30DaysRangeInBrazil,
   getLast7DaysRangeInBrazil,
   getTodayRangeInBrazil,
+  toBrazilDate,
   getWeekdayLabelInBrazil
 } from "../../shared/utils/date-range";
 
@@ -40,6 +41,61 @@ export class DashboardService {
     { label: "18H", start: 18, end: 19 },
     { label: "20H", start: 20, end: 21 }
   ];
+
+  async getCashClosing(dateStr?: string) {
+    const reference = dateStr ? new Date(`${dateStr}T12:00:00-03:00`) : new Date();
+    const range = getTodayRangeInBrazil(reference);
+
+    const [appointments, productSales] = await Promise.all([
+      this.prisma.appointment.findMany({
+        where: {
+          status: AppointmentStatus.COMPLETED,
+          endTime: { gte: range.start, lt: range.end }
+        },
+        include: {
+          client: { select: { name: true } },
+          queueEntry: { select: { serviceLabel: true } }
+        },
+        orderBy: { endTime: "asc" }
+      }),
+      this.prisma.productSale.findMany({
+        where: {
+          createdAt: { gte: range.start, lt: range.end }
+        },
+        include: {
+          inventoryItem: { select: { name: true, category: true } }
+        },
+        orderBy: { createdAt: "asc" }
+      })
+    ]);
+
+    const totalAppointments = appointments.reduce((sum, a) => sum + Number(a.price), 0);
+    const totalProducts = productSales.reduce((sum, s) => sum + Number(s.totalPrice), 0);
+
+    return {
+      date: dateStr ?? new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+      summary: {
+        totalAppointments: appointments.length,
+        revenueAppointments: totalAppointments,
+        totalProductsSold: productSales.reduce((sum, s) => sum + s.quantity, 0),
+        revenueProducts: totalProducts,
+        totalRevenue: totalAppointments + totalProducts
+      },
+      appointments: appointments.map((a) => ({
+        time: a.endTime.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }),
+        client: a.client.name,
+        service: a.queueEntry?.serviceLabel ?? a.notes ?? a.serviceType,
+        price: Number(a.price)
+      })),
+      products: productSales.map((s) => ({
+        name: s.inventoryItem.name,
+        brand: s.inventoryItem.category,
+        quantity: s.quantity,
+        unitPrice: Number(s.unitPrice),
+        total: Number(s.totalPrice)
+      }))
+    };
+  }
 
   async getFlowTrend() {
     const last30DaysRange = getLast30DaysRangeInBrazil();
