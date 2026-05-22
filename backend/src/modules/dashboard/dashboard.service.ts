@@ -89,8 +89,13 @@ export class DashboardService {
     const [appointments, productSales] = await Promise.all([
       this.prisma.appointment.findMany({
         where: { status: AppointmentStatus.COMPLETED, endTime: { gte: start, lt: end } },
-        include: { queueEntry: { select: { serviceLabel: true } } },
-        select: { endTime: true, price: true, notes: true, serviceType: true, queueEntry: true }
+        select: {
+          endTime: true,
+          price: true,
+          notes: true,
+          serviceType: true,
+          queueEntry: { select: { serviceLabel: true } }
+        }
       }),
       this.prisma.productSale.findMany({
         where: { createdAt: { gte: start, lt: end } },
