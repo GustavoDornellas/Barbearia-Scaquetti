@@ -130,7 +130,7 @@ export function DashboardPage() {
                 <div key={product.label}>
                   <div className="mb-2 flex justify-between text-sm">
                     <span>{product.label}</span>
-                    <span className="text-gold">{product.percentage}%</span>
+                    <span className="text-gold">{product.count} {product.count === 1 ? "unid." : "unid."}</span>
                   </div>
                   <div className="h-2 rounded-full bg-white/5">
                     <div className="h-2 rounded-full bg-gold" style={{ width: `${product.percentage}%` }} />
@@ -187,12 +187,14 @@ export function DashboardPage() {
               <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-white/10" />
               {flowTrendBuckets.map((point) => (
                 <div key={point.label} className="relative z-10 flex h-full flex-1 flex-col items-center justify-end gap-2">
-                  <span className="text-[10px] font-bold text-gold">{point.percentage}%</span>
+                  <span className="text-[10px] font-bold text-gold">
+                    {point.count > 0 ? point.count : ""}
+                  </span>
                   <div className="flex h-24 w-full items-end">
                     <div
                       className="w-full rounded-t-lg bg-gradient-to-t from-gold/35 via-gold/70 to-gold shadow-[0_0_24px_rgba(216,177,93,0.18)]"
-                      title={`${point.count} atendimentos`}
-                      style={{ height: `${Math.max(point.percentage, 4)}%` }}
+                      title={`${point.count} atendimento${point.count !== 1 ? "s" : ""}`}
+                      style={{ height: `${Math.max(point.percentage, point.count > 0 ? 4 : 0)}%` }}
                     />
                   </div>
                   <span className="text-[10px] font-semibold text-muted">{point.label}</span>

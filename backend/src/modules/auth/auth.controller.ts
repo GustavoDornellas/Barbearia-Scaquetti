@@ -8,10 +8,14 @@ import { LoginThrottlerGuard } from "../../shared/guards/login-throttler.guard";
 import { CurrentUser } from "../../shared/decorators/current-user.decorator";
 import { UserRole } from "@prisma/client";
 import { SkipThrottle, Throttle } from "@nestjs/throttler";
+import { CsrfService } from "../../shared/services/csrf.service";
 
 @Controller("auth")
 export class AuthController {
-  constructor(@Inject(AuthService) private readonly authService: AuthService) {}
+  constructor(
+    @Inject(AuthService) private readonly authService: AuthService,
+    private readonly csrfService: CsrfService
+  ) {}
 
   @UseGuards(LoginThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000, blockDuration: 300000 } })
@@ -56,9 +60,9 @@ export class AuthController {
 
   @SkipThrottle({ default: true })
   @Get("csrf-token")
-  getCsrfToken(@Req() request: Request) {
+  getCsrfToken() {
     return {
-      csrfToken: request.csrfToken?.()
+      csrfToken: this.csrfService.generate()
     };
   }
 

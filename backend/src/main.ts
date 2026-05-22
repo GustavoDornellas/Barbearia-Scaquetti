@@ -3,7 +3,6 @@ import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
-import csurf from "csurf";
 import { ResponseInterceptor } from "./shared/interceptors/response.interceptor";
 import { SanitizationMiddleware } from "./shared/middleware/sanitization.middleware";
 import { HttpExceptionFilter } from "./shared/filters/http-exception.filter";
@@ -39,16 +38,6 @@ async function bootstrap() {
   );
   app.use(cookieParser());
   app.use(new SanitizationMiddleware().use);
-  app.use(
-    csurf({
-      cookie: {
-        httpOnly: false,
-        sameSite: isProduction ? "none" : "lax",
-        secure: isProduction,
-        path: "/"
-      }
-    })
-  );
   app.setGlobalPrefix("v1");
   app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());

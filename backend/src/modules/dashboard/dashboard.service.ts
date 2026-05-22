@@ -34,10 +34,11 @@ export class DashboardService {
   private readonly flowBuckets = [
     { label: "08H", start: 8, end: 9 },
     { label: "10H", start: 10, end: 11 },
-    { label: "12H", start: 12, end: 14 },
-    { label: "15H", start: 15, end: 17 },
+    { label: "12H", start: 12, end: 13 },
+    { label: "14H", start: 14, end: 15 },
+    { label: "16H", start: 16, end: 17 },
     { label: "18H", start: 18, end: 19 },
-    { label: "20H", start: 20, end: 23 }
+    { label: "20H", start: 20, end: 21 }
   ];
 
   async getFlowTrend() {
@@ -212,7 +213,7 @@ export class DashboardService {
     return appointments.map((appointment) => ({
       id: appointment.id,
       clientName: appointment.client.name,
-      serviceLabel: appointment.queueEntry?.serviceLabel ?? appointment.notes ?? appointment.serviceType,
+      serviceLabel: appointment.notes ?? appointment.queueEntry?.serviceLabel ?? appointment.serviceType,
       price: Number(appointment.price),
       finishedAt: appointment.endTime.toISOString(),
       status: "FINALIZADO"

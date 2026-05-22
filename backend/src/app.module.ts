@@ -14,6 +14,8 @@ import { CsrfTokenMiddleware } from "./shared/middleware/csrf-token.middleware";
 import { PerformanceMiddleware } from "./shared/middleware/performance.middleware";
 import { validateEnv } from "./shared/config/env.validation";
 import { HealthController } from "./health.controller";
+import { CsrfService } from "./shared/services/csrf.service";
+import { CsrfGuard } from "./shared/guards/csrf.guard";
 
 @Module({
   imports: [
@@ -36,9 +38,14 @@ import { HealthController } from "./health.controller";
   ],
   controllers: [HealthController],
   providers: [
+    CsrfService,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard
+    },
+    {
+      provide: APP_GUARD,
+      useClass: CsrfGuard
     }
   ]
 })
