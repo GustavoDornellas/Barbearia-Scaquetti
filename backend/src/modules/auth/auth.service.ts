@@ -23,7 +23,24 @@ export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwtService: JwtService
-  ) {}
+  ) {
+    // Limpa tokens expirados ao iniciar e a cada 24h
+    this.cleanExpiredTokens();
+    setInterval(() => this.cleanExpiredTokens(), 24 * 60 * 60 * 1000);
+  }
+
+  private async cleanExpiredTokens() {
+    try {
+      const result = await this.prisma.refreshToken.deleteMany({
+        where: { expiresAt: { lt: new Date() } }
+      });
+      if (result.count > 0) {
+        console.log(`[auth] ${result.count} refresh token(s) expirado(s) removido(s)`);
+      }
+    } catch {
+      // Falha silenciosa — não impacta o sistema
+    }
+  }
 
   async login(payload: LoginInput) {
     const user = await this.prisma.user.findUnique({ where: { email: payload.email } });
