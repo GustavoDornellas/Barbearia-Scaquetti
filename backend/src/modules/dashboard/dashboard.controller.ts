@@ -21,4 +21,17 @@ export class DashboardController {
   getCashClosing(@Query("date") date?: string) {
     return this.dashboardService.getCashClosing(date);
   }
+
+  @Get("closing-history")
+  getClosingHistory(@Query("months") months?: string) {
+    return this.dashboardService.getClosingHistory(Number(months ?? 1));
+  }
+
+  @Get("monthly-report")
+  getMonthlyReport(@Query("year") year?: string, @Query("month") month?: string) {
+    return this.dashboardService.getMonthlyReport(
+      Number(year ?? new Date().getFullYear()),
+      Number(month ?? new Date().getMonth() + 1)
+    );
+  }
 }

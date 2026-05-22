@@ -17,6 +17,35 @@ type CashClosingData = {
   products: Array<{ name: string; brand: string; quantity: number; unitPrice: number; total: number }>;
 };
 
+type HistoryData = {
+  days: Array<{
+    date: string;
+    dateFormatted: string;
+    appointments: number;
+    revenueAppointments: number;
+    revenueProducts: number;
+    productsSold: number;
+    total: number;
+  }>;
+};
+
+type MonthlyData = {
+  monthName: string;
+  year: number;
+  month: number;
+  summary: {
+    workedDays: number;
+    totalClients: number;
+    averageTicket: number;
+    revenueAppointments: number;
+    revenueProducts: number;
+    totalRevenue: number;
+  };
+  bestDay: { date: string; revenue: number } | null;
+  worstDay: { date: string; revenue: number } | null;
+  topServices: Array<{ label: string; count: number }>;
+};
+
 type DashboardData = {
   revenueToday: number;
   totalClients: number;
@@ -50,7 +79,72 @@ export function DashboardPage() {
   const [cashClosingData, setCashClosingData] = useState<CashClosingData | null>(null);
   const [cashClosingLoading, setCashClosingLoading] = useState(false);
 
-  async function openCashClosing() {
+  // Histórico
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyData, setHistoryData] = useState<HistoryData | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Relatório mensal
+  const [monthlyOpen, setMonthlyOpen] = useState(false);
+  const [monthlyYear, setMonthlyYear] = useState(() => new Date().getFullYear());
+  const [monthlyMonth, setMonthlyMonth] = useState(() => new Date().getMonth() + 1);
+  const [monthlyData, setMonthlyData] = useState<MonthlyData | null>(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+
+  async function openHistory() {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    try {
+      const response = await api.get("/dashboard/closing-history?months=3");
+      setHistoryData(response.data.data);
+    } catch (error) {
+      notify(getFriendlyError(error), "error");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function openMonthly() {
+    setMonthlyOpen(true);
+    await loadMonthly(monthlyYear, monthlyMonth);
+  }
+
+  async function loadMonthly(year: number, month: number) {
+    setMonthlyLoading(true);
+    try {
+      const response = await api.get(`/dashboard/monthly-report?year=${year}&month=${month}`);
+      setMonthlyData(response.data.data);
+    } catch (error) {
+      notify(getFriendlyError(error), "error");
+    } finally {
+      setMonthlyLoading(false);
+    }
+  }
+
+  function exportMonthlyToCSV() {
+    if (!monthlyData) return;
+    const fmt = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+    let csv = `RELATÓRIO MENSAL;${monthlyData.monthName}\n\n`;
+    csv += `RESUMO\n`;
+    csv += `Dias trabalhados;${monthlyData.summary.workedDays}\n`;
+    csv += `Total de clientes;${monthlyData.summary.totalClients}\n`;
+    csv += `Ticket médio;${fmt(monthlyData.summary.averageTicket)}\n`;
+    csv += `Receita de cortes;${fmt(monthlyData.summary.revenueAppointments)}\n`;
+    csv += `Receita de produtos;${fmt(monthlyData.summary.revenueProducts)}\n`;
+    csv += `TOTAL DO MÊS;${fmt(monthlyData.summary.totalRevenue)}\n\n`;
+    if (monthlyData.bestDay) csv += `Melhor dia;${monthlyData.bestDay.date};${fmt(monthlyData.bestDay.revenue)}\n`;
+    if (monthlyData.worstDay) csv += `Pior dia;${monthlyData.worstDay.date};${fmt(monthlyData.worstDay.revenue)}\n`;
+    csv += `\nSERVIÇOS MAIS REALIZADOS\n`;
+    csv += `Serviço;Quantidade\n`;
+    for (const s of monthlyData.topServices) csv += `${s.label};${s.count}\n`;
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `relatorio-${monthlyYear}-${String(monthlyMonth).padStart(2, "0")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
     setCashClosingOpen(true);
     await loadCashClosing(cashClosingDate);
   }
@@ -163,6 +257,20 @@ export function DashboardPage() {
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           Fechar Caixa
         </button>
+        <button
+          onClick={openHistory}
+          className="flex items-center gap-2 rounded-2xl border border-border bg-panel px-4 py-2.5 text-sm font-semibold text-muted transition hover:text-text lg:mb-1 self-start lg:self-auto"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          Histórico
+        </button>
+        <button
+          onClick={openMonthly}
+          className="flex items-center gap-2 rounded-2xl border border-border bg-panel px-4 py-2.5 text-sm font-semibold text-muted transition hover:text-text lg:mb-1 self-start lg:self-auto"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+          Relatório Mensal
+        </button>
       </div>
 
       {cashClosingOpen && (
@@ -247,6 +355,145 @@ export function DashboardPage() {
                   className="mt-2 w-full rounded-2xl bg-gold py-3 text-sm font-bold text-black transition hover:bg-gold/90 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Exportar Excel (.xlsx)
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {historyOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/60 p-4 md:items-center md:justify-center">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-border bg-panel p-6 shadow-panel">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold">Histórico de Fechamentos</h2>
+              <button onClick={() => setHistoryOpen(false)} className="text-muted hover:text-text text-xl">✕</button>
+            </div>
+            {historyLoading ? (
+              <p className="text-sm text-muted py-8 text-center">Carregando...</p>
+            ) : !historyData || historyData.days.length === 0 ? (
+              <p className="text-sm text-muted py-8 text-center">Nenhum movimento nos últimos 3 meses.</p>
+            ) : (
+              <div className="space-y-2">
+                {historyData.days.map((day) => (
+                  <div
+                    key={day.date}
+                    className="flex items-center justify-between rounded-2xl border border-border bg-background px-4 py-3 cursor-pointer hover:border-gold/50 transition"
+                    onClick={() => { setCashClosingDate(day.date); setHistoryOpen(false); openCashClosing(); }}
+                  >
+                    <div>
+                      <p className="text-sm font-semibold">{day.dateFormatted}</p>
+                      <p className="text-xs text-muted mt-0.5">{day.appointments} atendimento{day.appointments !== 1 ? "s" : ""} · {day.productsSold} produto{day.productsSold !== 1 ? "s" : ""}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-gold">R$ {day.total.toFixed(2)}</p>
+                      <p className="text-xs text-muted">Ver detalhes →</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {monthlyOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/60 p-4 md:items-center md:justify-center">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-border bg-panel p-6 shadow-panel">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold">Relatório Mensal</h2>
+              <button onClick={() => setMonthlyOpen(false)} className="text-muted hover:text-text text-xl">✕</button>
+            </div>
+            <div className="flex items-center gap-2 mb-5">
+              <select
+                value={monthlyMonth}
+                onChange={(e) => { const m = Number(e.target.value); setMonthlyMonth(m); loadMonthly(monthlyYear, m); }}
+                className="rounded-2xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-gold"
+              >
+                {["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"].map((name, i) => (
+                  <option key={i + 1} value={i + 1}>{name}</option>
+                ))}
+              </select>
+              <select
+                value={monthlyYear}
+                onChange={(e) => { const y = Number(e.target.value); setMonthlyYear(y); loadMonthly(y, monthlyMonth); }}
+                className="rounded-2xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-gold"
+              >
+                {[new Date().getFullYear(), new Date().getFullYear() - 1].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+            {monthlyLoading ? (
+              <p className="text-sm text-muted py-8 text-center">Carregando...</p>
+            ) : monthlyData ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 mb-5 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Dias trabalhados</p>
+                    <p className="text-xl font-bold">{monthlyData.summary.workedDays}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Clientes atendidos</p>
+                    <p className="text-xl font-bold">{monthlyData.summary.totalClients}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Ticket médio</p>
+                    <p className="text-xl font-bold text-gold">R$ {monthlyData.summary.averageTicket.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Receita cortes</p>
+                    <p className="text-xl font-bold">R$ {monthlyData.summary.revenueAppointments.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-3">
+                    <p className="text-xs text-muted mb-1">Receita produtos</p>
+                    <p className="text-xl font-bold">R$ {monthlyData.summary.revenueProducts.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-3 col-span-2 sm:col-span-1">
+                    <p className="text-xs text-muted mb-1">Total do mês</p>
+                    <p className="text-xl font-bold text-gold">R$ {monthlyData.summary.totalRevenue.toFixed(2)}</p>
+                  </div>
+                </div>
+                {(monthlyData.bestDay || monthlyData.worstDay) && (
+                  <div className="flex gap-3 mb-5">
+                    {monthlyData.bestDay && (
+                      <div className="flex-1 rounded-2xl border border-border bg-background p-3">
+                        <p className="text-xs text-muted mb-1">🏆 Melhor dia</p>
+                        <p className="text-sm font-semibold">{monthlyData.bestDay.date}</p>
+                        <p className="text-sm text-gold font-bold">R$ {monthlyData.bestDay.revenue.toFixed(2)}</p>
+                      </div>
+                    )}
+                    {monthlyData.worstDay && (
+                      <div className="flex-1 rounded-2xl border border-border bg-background p-3">
+                        <p className="text-xs text-muted mb-1">📉 Pior dia</p>
+                        <p className="text-sm font-semibold">{monthlyData.worstDay.date}</p>
+                        <p className="text-sm text-muted font-bold">R$ {monthlyData.worstDay.revenue.toFixed(2)}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {monthlyData.topServices.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold/80 mb-3">Serviços mais realizados</p>
+                    <div className="space-y-2">
+                      {monthlyData.topServices.map((s, i) => (
+                        <div key={i} className="flex justify-between text-sm border-b border-border pb-2">
+                          <span>{s.label}</span>
+                          <span className="text-gold font-semibold">{s.count}x</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {monthlyData.summary.totalRevenue === 0 && (
+                  <p className="text-sm text-muted text-center py-4">Nenhum movimento neste mês.</p>
+                )}
+                <button
+                  onClick={exportMonthlyToCSV}
+                  disabled={monthlyData.summary.totalRevenue === 0}
+                  className="mt-2 w-full rounded-2xl bg-gold py-3 text-sm font-bold text-black transition hover:bg-gold/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Exportar Relatório (.csv)
                 </button>
               </>
             ) : null}

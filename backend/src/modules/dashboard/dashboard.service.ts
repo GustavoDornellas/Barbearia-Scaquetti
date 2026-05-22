@@ -42,6 +42,111 @@ export class DashboardService {
     { label: "20H", start: 20, end: 21 }
   ];
 
+  async getClosingHistory(months = 1) {
+    const now = new Date();
+    const start = new Date(`${now.getFullYear()}-${String(now.getMonth() + 1 - months + 1).padStart(2, "0")}-01T00:00:00-03:00`);
+    // Busca todos os appointments dos últimos N meses agrupados por dia
+    const appointments = await this.prisma.appointment.findMany({
+      where: { status: AppointmentStatus.COMPLETED, endTime: { gte: start } },
+      select: { endTime: true, price: true }
+    });
+    const productSales = await this.prisma.productSale.findMany({
+      where: { createdAt: { gte: start } },
+      select: { createdAt: true, totalPrice: true, quantity: true }
+    });
+
+    // Agrupa por data no fuso de Brasília
+    const dayMap = new Map<string, { appointments: number; revenueAppointments: number; revenueProducts: number; productsSold: number }>();
+
+    for (const a of appointments) {
+      const day = toBrazilDate(a.endTime).toISOString().slice(0, 10);
+      const existing = dayMap.get(day) ?? { appointments: 0, revenueAppointments: 0, revenueProducts: 0, productsSold: 0 };
+      dayMap.set(day, { ...existing, appointments: existing.appointments + 1, revenueAppointments: existing.revenueAppointments + Number(a.price) });
+    }
+
+    for (const s of productSales) {
+      const day = toBrazilDate(s.createdAt).toISOString().slice(0, 10);
+      const existing = dayMap.get(day) ?? { appointments: 0, revenueAppointments: 0, revenueProducts: 0, productsSold: 0 };
+      dayMap.set(day, { ...existing, revenueProducts: existing.revenueProducts + Number(s.totalPrice), productsSold: existing.productsSold + s.quantity });
+    }
+
+    const days = Array.from(dayMap.entries())
+      .map(([date, data]) => ({
+        date,
+        dateFormatted: new Date(`${date}T12:00:00-03:00`).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+        ...data,
+        total: data.revenueAppointments + data.revenueProducts
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    return { days };
+  }
+
+  async getMonthlyReport(year: number, month: number) {
+    const start = new Date(`${year}-${String(month).padStart(2, "0")}-01T00:00:00-03:00`);
+    const end = new Date(month === 12 ? `${year + 1}-01-01T00:00:00-03:00` : `${year}-${String(month + 1).padStart(2, "0")}-01T00:00:00-03:00`);
+
+    const [appointments, productSales] = await Promise.all([
+      this.prisma.appointment.findMany({
+        where: { status: AppointmentStatus.COMPLETED, endTime: { gte: start, lt: end } },
+        include: { queueEntry: { select: { serviceLabel: true } } },
+        select: { endTime: true, price: true, notes: true, serviceType: true, queueEntry: true }
+      }),
+      this.prisma.productSale.findMany({
+        where: { createdAt: { gte: start, lt: end } },
+        select: { createdAt: true, totalPrice: true, quantity: true }
+      })
+    ]);
+
+    const revenueAppointments = appointments.reduce((sum, a) => sum + Number(a.price), 0);
+    const revenueProducts = productSales.reduce((sum, s) => sum + Number(s.totalPrice), 0);
+    const totalRevenue = revenueAppointments + revenueProducts;
+    const averageTicket = appointments.length > 0 ? revenueAppointments / appointments.length : 0;
+
+    // Dias trabalhados
+    const workedDays = new Set(appointments.map((a) => toBrazilDate(a.endTime).toISOString().slice(0, 10))).size;
+
+    // Melhor e pior dia
+    const dayRevMap = new Map<string, number>();
+    for (const a of appointments) {
+      const day = toBrazilDate(a.endTime).toISOString().slice(0, 10);
+      dayRevMap.set(day, (dayRevMap.get(day) ?? 0) + Number(a.price));
+    }
+    const dayEntries = Array.from(dayRevMap.entries());
+    const bestDay = dayEntries.sort((a, b) => b[1] - a[1])[0];
+    const worstDay = dayEntries.sort((a, b) => a[1] - b[1])[0];
+
+    // Serviços mais realizados
+    const serviceMap = new Map<string, number>();
+    for (const a of appointments) {
+      const label = a.queueEntry?.serviceLabel ?? a.notes ?? a.serviceType;
+      serviceMap.set(label, (serviceMap.get(label) ?? 0) + 1);
+    }
+    const topServices = Array.from(serviceMap.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    const monthName = new Date(`${year}-${String(month).padStart(2, "0")}-15`).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
+
+    return {
+      monthName,
+      year,
+      month,
+      summary: {
+        workedDays,
+        totalClients: appointments.length,
+        averageTicket,
+        revenueAppointments,
+        revenueProducts,
+        totalRevenue
+      },
+      bestDay: bestDay ? { date: new Date(`${bestDay[0]}T12:00:00-03:00`).toLocaleDateString("pt-BR"), revenue: bestDay[1] } : null,
+      worstDay: worstDay && worstDay[0] !== bestDay?.[0] ? { date: new Date(`${worstDay[0]}T12:00:00-03:00`).toLocaleDateString("pt-BR"), revenue: worstDay[1] } : null,
+      topServices
+    };
+  }
+
   async getCashClosing(dateStr?: string) {
     const reference = dateStr ? new Date(`${dateStr}T12:00:00-03:00`) : new Date();
     const range = getTodayRangeInBrazil(reference);
