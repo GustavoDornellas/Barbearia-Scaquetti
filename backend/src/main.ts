@@ -42,9 +42,10 @@ async function bootstrap() {
   app.use(
     csurf({
       cookie: {
-        httpOnly: true,
+        httpOnly: false,
         sameSite: isProduction ? "none" : "lax",
-        secure: isProduction
+        secure: isProduction,
+        path: "/"
       }
     })
   );

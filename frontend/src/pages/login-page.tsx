@@ -20,12 +20,22 @@ export function LoginPage() {
   useEffect(() => {
     sessionStorage.removeItem("authUser");
     // Pré-carrega o CSRF token assim que a página abre
-    api.get("/auth/csrf-token")
-      .then((response) => {
-        const token = response.data.data.csrfToken;
-        if (token) localStorage.setItem("csrfToken", token);
-      })
-      .catch(() => {});
+    // Tenta duas vezes — Safari/iOS pode falhar na primeira por ITP
+    async function prefetchCsrf() {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await api.get("/auth/csrf-token");
+          const token = response.data.data.csrfToken;
+          if (token) {
+            localStorage.setItem("csrfToken", token);
+            return;
+          }
+        } catch {
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+    }
+    prefetchCsrf();
   }, []);
 
   async function handleSubmit(event: FormEvent) {
