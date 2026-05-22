@@ -73,7 +73,11 @@ api.interceptors.response.use(
         original.headers["X-CSRF-Token"] = csrfToken;
         return api(original);
       } catch {
-        // Fall through to the friendly error returned by the caller.
+        // Se falhar, redireciona para login se não estiver nele
+        if (!original?.url?.includes("/auth/login")) {
+          useToastStore.getState().notify("Sessão expirada. Entre de novo.", "error");
+          window.location.href = "/login";
+        }
       }
     }
 

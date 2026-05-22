@@ -451,7 +451,7 @@ export function QueuePage() {
 
       {formOpen && (
         <form onSubmit={submit} className="fixed inset-0 z-50 flex items-end bg-black/60 p-4 md:items-center md:justify-center">
-          <div className="w-full max-w-md rounded-[28px] border border-border bg-panel p-6 shadow-panel">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-[28px] border border-border bg-panel p-6 shadow-panel">
             <h2 className="text-lg font-bold">Adicionar na fila</h2>
             <select value={form.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })} className="mt-4 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-gold">
               <option value="">{clientsLoading ? "Carregando clientes..." : "Selecione o cliente"}</option>
@@ -480,7 +480,7 @@ export function QueuePage() {
                   onClick={() => setShowNewStyleInput(!showNewStyleInput)}
                   className="rounded-2xl border border-dashed border-border bg-background px-3 py-2 text-sm text-muted hover:border-gold/50"
                 >
-                  + Nova marca
+                  + Novo estilo
                 </button>
               </div>
               {showNewStyleInput && (

@@ -4,6 +4,7 @@ import { AuthService } from "./auth.service";
 import { loginSchema } from "./auth.schemas";
 import { ZodValidationPipe } from "../../shared/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../../shared/guards/jwt-auth.guard";
+import { LoginThrottlerGuard } from "../../shared/guards/login-throttler.guard";
 import { CurrentUser } from "../../shared/decorators/current-user.decorator";
 import { UserRole } from "@prisma/client";
 import { SkipThrottle, Throttle } from "@nestjs/throttler";
@@ -12,7 +13,8 @@ import { SkipThrottle, Throttle } from "@nestjs/throttler";
 export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
-  @Throttle({ default: { limit: 10, ttl: 60000, blockDuration: 30000 } })
+  @UseGuards(LoginThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000, blockDuration: 300000 } })
   @Post("login")
   async login(@Body(new ZodValidationPipe(loginSchema)) body: unknown, @Res({ passthrough: true }) response: Response) {
     const payload = await this.authService.login(body as never);

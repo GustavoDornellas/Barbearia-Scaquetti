@@ -218,7 +218,7 @@ export function InventoryPage() {
             </p>
           )}
         </div>
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1.4fr] gap-3 border-b border-border px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted">
+        <div className="hidden lg:grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1.4fr] gap-3 border-b border-border px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted">
           <span>Produto</span>
           <span>Marca</span>
           <span>Valor</span>
@@ -245,7 +245,7 @@ export function InventoryPage() {
                 {item.status === "NORMAL" ? "Em estoque" : item.status === "LOW" ? "Acabando" : "Crítico"}
               </StatusBadge>
             </div>
-            <div className="flex flex-nowrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="secondary" onClick={() => setMovement({ item, type: "IN", quantity: 1, reason: "" })}>Movimentar</Button>
               <Button variant="secondary" onClick={() => openForm(item)}>Editar</Button>
               <button
@@ -263,7 +263,8 @@ export function InventoryPage() {
       </section>
 
       {formOpen && (
-        <form onSubmit={submit} className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-3xl rounded-[28px] border border-border bg-panel p-5 shadow-panel">
+        <div className="fixed inset-0 z-40 flex items-end bg-black/60 p-4 md:items-center md:justify-center">
+        <form onSubmit={submit} className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-border bg-panel p-5 shadow-panel">
           <h2 className="text-lg font-bold">{editing ? "Editar produto" : "Novo produto"}</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <input
@@ -301,6 +302,7 @@ export function InventoryPage() {
             <Button type="submit">Salvar</Button>
           </div>
         </form>
+        </div>
       )}
 
       {movement && (

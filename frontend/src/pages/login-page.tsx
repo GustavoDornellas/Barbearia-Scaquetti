@@ -2,32 +2,56 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { useAuthStore } from "../store/auth-store";
-import { useCsrf } from "../hooks/use-csrf";
-import { getFriendlyError } from "../services/api";
+import { api, getFriendlyError } from "../services/api";
 import { useToastStore } from "../store/toast-store";
 
 export function LoginPage() {
-  useCsrf();
   const navigate = useNavigate();
   const { login } = useAuthStore();
   const notify = useToastStore((state) => state.notify);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [blockedUntil, setBlockedUntil] = useState<number | null>(null);
+
+  const isBlocked = blockedUntil !== null && Date.now() < blockedUntil;
+  const blockMinutesLeft = isBlocked ? Math.ceil((blockedUntil! - Date.now()) / 60000) : 0;
 
   useEffect(() => {
     sessionStorage.removeItem("authUser");
+    // Pré-carrega o CSRF token assim que a página abre
+    api.get("/auth/csrf-token")
+      .then((response) => {
+        const token = response.data.data.csrfToken;
+        if (token) localStorage.setItem("csrfToken", token);
+      })
+      .catch(() => {});
   }, []);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
     try {
+      // Garante token CSRF fresco antes de logar — resolve problema no mobile
+      try {
+        const csrfResponse = await api.get("/auth/csrf-token");
+        const token = csrfResponse.data.data.csrfToken;
+        if (token) localStorage.setItem("csrfToken", token);
+      } catch {
+        // Continua mesmo se falhar — token do localStorage pode ainda ser válido
+      }
+
       await login(email, password);
       notify("Login realizado com sucesso.", "success");
       navigate("/", { replace: true });
-    } catch (error) {
-      notify(getFriendlyError(error), "error");
+    } catch (error: any) {
+      if (error?.response?.status === 429) {
+        // Bloqueia o botão por 5 minutos no frontend também
+        setBlockedUntil(Date.now() + 5 * 60 * 1000);
+        notify("Muitas tentativas. Tente novamente em 5 minutos.", "error");
+      } else {
+        notify(getFriendlyError(error), "error");
+      }
     } finally {
       setLoading(false);
     }
@@ -67,8 +91,8 @@ export function LoginPage() {
             placeholder="Senha"
           />
         </div>
-        <Button type="submit" className="mt-6 w-full" disabled={loading}>
-          {loading ? "Entrando..." : "Entrar"}
+        <Button type="submit" className="mt-6 w-full" disabled={loading || isBlocked}>
+          {loading ? "Entrando..." : isBlocked ? `Bloqueado por ${blockMinutesLeft} min` : "Entrar"}
         </Button>
       </form>
     </div>

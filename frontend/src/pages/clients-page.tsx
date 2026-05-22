@@ -172,7 +172,7 @@ export function ClientsPage() {
       </form>
 
       <section className="overflow-hidden rounded-[32px] border border-border bg-panel">
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 border-b border-border px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted">
+        <div className="hidden lg:grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 border-b border-border px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted">
           <span>Cliente</span>
           <span>Telefone</span>
           <span>Última visita</span>
@@ -207,7 +207,8 @@ export function ClientsPage() {
       </div>
 
       {formOpen && (
-        <form onSubmit={submit} className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-2xl rounded-[32px] border border-border bg-panel p-6 shadow-panel">
+        <div className="fixed inset-0 z-40 flex items-end bg-black/60 p-4 md:items-center md:justify-center">
+        <form onSubmit={submit} className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[32px] border border-border bg-panel p-6 shadow-panel">
           <div>
             <p className="text-xs uppercase tracking-[0.28em] text-gold">Cliente</p>
             <h2 className="mt-2 text-2xl font-bold">{editing ? "Editar cliente" : "Novo cliente"}</h2>
@@ -236,6 +237,7 @@ export function ClientsPage() {
             <Button type="submit" disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
           </div>
         </form>
+        </div>
       )}
 
       {pendingDelete && (

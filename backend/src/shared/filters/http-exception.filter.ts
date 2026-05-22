@@ -9,7 +9,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const exceptionResponse = exception instanceof HttpException ? exception.getResponse() : null;
 
     const message = status === HttpStatus.TOO_MANY_REQUESTS
-      ? "Muitas tentativas em pouco tempo. Aguarde alguns segundos e tente novamente."
+      ? "Muitas tentativas de login. Tente novamente em 5 minutos."
       :
       typeof exceptionResponse === "object" && exceptionResponse && "message" in exceptionResponse
         ? (exceptionResponse as { message: string | string[] }).message

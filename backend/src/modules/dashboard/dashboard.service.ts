@@ -12,6 +12,7 @@ import {
 
 type CompletedAppointmentWithClient = Appointment & {
   client: { name: string };
+  queueEntry?: { serviceLabel: string } | null;
 };
 
 type RevenueSummary = {
@@ -171,7 +172,10 @@ export class DashboardService {
   private getRecentCompletedAppointments(take: number) {
     return this.prisma.appointment.findMany({
       where: { status: AppointmentStatus.COMPLETED },
-      include: { client: { select: { name: true } } },
+      include: {
+        client: { select: { name: true } },
+        queueEntry: { select: { serviceLabel: true } }
+      },
       orderBy: { endTime: "desc" },
       take
     });
@@ -208,7 +212,7 @@ export class DashboardService {
     return appointments.map((appointment) => ({
       id: appointment.id,
       clientName: appointment.client.name,
-      serviceLabel: appointment.notes ?? appointment.serviceType,
+      serviceLabel: appointment.queueEntry?.serviceLabel ?? appointment.notes ?? appointment.serviceType,
       price: Number(appointment.price),
       finishedAt: appointment.endTime.toISOString(),
       status: "FINALIZADO"

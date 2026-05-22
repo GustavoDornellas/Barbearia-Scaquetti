@@ -29,7 +29,7 @@ export function ClientFormPage() {
 
   return (
     <div className="grid gap-8 xl:grid-cols-[1.3fr_0.7fr]">
-      <section className="space-y-8">
+      <section className="min-w-0 space-y-8">
         <PageHeader
           title={
             <>
