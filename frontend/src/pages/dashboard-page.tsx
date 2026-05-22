@@ -3,7 +3,6 @@ import { PageHeader } from "../components/ui/page-header";
 import { StatCard } from "../components/ui/stat-card";
 import { api, ApiEnvelope, getFriendlyError } from "../services/api";
 import { useToastStore } from "../store/toast-store";
-import * as XLSX from "xlsx";
 
 type CashClosingData = {
   date: string;
@@ -71,44 +70,45 @@ export function DashboardPage() {
   function exportToExcel() {
     if (!cashClosingData) return;
 
-    const wb = XLSX.utils.book_new();
+    const fmt = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
 
-    // Aba 1: Resumo
-    const resumoData = [
-      ["FECHAMENTO DE CAIXA", cashClosingData.date],
-      [],
-      ["RESUMO"],
-      ["Atendimentos realizados", cashClosingData.summary.totalAppointments],
-      ["Receita de atendimentos", `R$ ${cashClosingData.summary.revenueAppointments.toFixed(2)}`],
-      ["Produtos vendidos", cashClosingData.summary.totalProductsSold],
-      ["Receita de produtos", `R$ ${cashClosingData.summary.revenueProducts.toFixed(2)}`],
-      [],
-      ["TOTAL GERAL", `R$ ${cashClosingData.summary.totalRevenue.toFixed(2)}`]
-    ];
-    const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
-    wsResumo["!cols"] = [{ wch: 30 }, { wch: 20 }];
-    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+      <head><meta charset="UTF-8"/></head>
+      <body>
+        <table>
+          <tr><td colspan="2"><b>FECHAMENTO DE CAIXA — ${cashClosingData.date}</b></td></tr>
+          <tr><td></td></tr>
+          <tr><td><b>RESUMO</b></td></tr>
+          <tr><td>Atendimentos realizados</td><td>${cashClosingData.summary.totalAppointments}</td></tr>
+          <tr><td>Receita de atendimentos</td><td>${fmt(cashClosingData.summary.revenueAppointments)}</td></tr>
+          <tr><td>Produtos vendidos</td><td>${cashClosingData.summary.totalProductsSold}</td></tr>
+          <tr><td>Receita de produtos</td><td>${fmt(cashClosingData.summary.revenueProducts)}</td></tr>
+          <tr><td></td></tr>
+          <tr><td><b>TOTAL GERAL</b></td><td><b>${fmt(cashClosingData.summary.totalRevenue)}</b></td></tr>
+          <tr><td></td></tr>
+          <tr><td colspan="4"><b>ATENDIMENTOS</b></td></tr>
+          <tr><td><b>Horário</b></td><td><b>Cliente</b></td><td><b>Serviço</b></td><td><b>Valor</b></td></tr>
+          ${cashClosingData.appointments.map((a) =>
+            `<tr><td>${a.time}</td><td>${a.client}</td><td>${a.service}</td><td>${fmt(a.price)}</td></tr>`
+          ).join("")}
+          <tr><td></td></tr>
+          <tr><td colspan="5"><b>PRODUTOS VENDIDOS</b></td></tr>
+          <tr><td><b>Produto</b></td><td><b>Marca</b></td><td><b>Qtd</b></td><td><b>Valor Unit.</b></td><td><b>Total</b></td></tr>
+          ${cashClosingData.products.map((p) =>
+            `<tr><td>${p.name}</td><td>${p.brand}</td><td>${p.quantity}</td><td>${fmt(p.unitPrice)}</td><td>${fmt(p.total)}</td></tr>`
+          ).join("")}
+        </table>
+      </body></html>`;
 
-    // Aba 2: Atendimentos
-    const atendimentosHeader = [["Horário", "Cliente", "Serviço", "Valor (R$)"]];
-    const atendimentosRows = cashClosingData.appointments.map((a) => [
-      a.time, a.client, a.service, a.price
-    ]);
-    const wsAtendimentos = XLSX.utils.aoa_to_sheet([...atendimentosHeader, ...atendimentosRows]);
-    wsAtendimentos["!cols"] = [{ wch: 10 }, { wch: 25 }, { wch: 25 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, wsAtendimentos, "Atendimentos");
-
-    // Aba 3: Produtos
-    const produtosHeader = [["Produto", "Marca", "Quantidade", "Valor Unit. (R$)", "Total (R$)"]];
-    const produtosRows = cashClosingData.products.map((p) => [
-      p.name, p.brand, p.quantity, p.unitPrice, p.total
-    ]);
-    const wsProdutos = XLSX.utils.aoa_to_sheet([...produtosHeader, ...produtosRows]);
-    wsProdutos["!cols"] = [{ wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 18 }, { wch: 14 }];
-    XLSX.utils.book_append_sheet(wb, wsProdutos, "Produtos");
-
+    const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
     const dateFormatted = cashClosingDate.split("-").reverse().join("-");
-    XLSX.writeFile(wb, `fechamento-caixa-${dateFormatted}.xlsx`);
+    a.href = url;
+    a.download = `fechamento-caixa-${dateFormatted}.xls`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   useEffect(() => {
