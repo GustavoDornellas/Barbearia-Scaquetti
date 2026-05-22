@@ -267,7 +267,7 @@ export function QueuePage() {
   }
 
   const peakTrend = flowTrend.reduce<FlowTrendPoint | null>((peak, point) => {
-    if (!peak || point.percentage > peak.percentage) return point;
+    if (!peak || point.count > peak.count) return point;
     return peak;
   }, null);
   const hasFlowTrendData = flowTrend.some((point) => point.count > 0);
@@ -429,12 +429,14 @@ export function QueuePage() {
               <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-white/10" />
               {flowTrend.map((point) => (
                 <div key={point.label} className="relative z-10 flex h-full flex-1 flex-col items-center justify-end gap-2">
-                  <span className="text-[10px] font-bold text-gold">{point.percentage}%</span>
+                  <span className="text-[10px] font-bold text-gold">
+                    {point.count > 0 ? point.count : ""}
+                  </span>
                   <div className="flex h-20 w-full items-end">
                     <div
                       className="w-full rounded-t-lg bg-gradient-to-t from-gold/35 via-gold/70 to-gold shadow-[0_0_24px_rgba(216,177,93,0.18)]"
-                      title={`${point.count} atendimentos`}
-                      style={{ height: `${Math.max(point.percentage, hasFlowTrendData ? 4 : 0)}%` }}
+                      title={`${point.count} atendimento${point.count !== 1 ? "s" : ""}`}
+                      style={{ height: `${Math.max(point.percentage, point.count > 0 ? 4 : 0)}%` }}
                     />
                   </div>
                   <span className="text-[10px] font-semibold text-muted">{point.label}</span>
