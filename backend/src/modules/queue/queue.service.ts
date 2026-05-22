@@ -157,8 +157,7 @@ export class QueueService {
       if (entry.status !== QueueStatus.IN_SERVICE) {
         throw new BadRequestException("Apenas atendimentos em andamento podem ser finalizados");
       }
-      console.log(`[queue:finish:debug] serviceLabel="${entry.serviceLabel}" notes="${entry.notes ?? "null"}"`);
-
+      console.log(`[queue:finish:debug] serviceLabel="${entry.serviceLabel}"`);
       const finishedAt = new Date();
       const appointmentId = await this.upsertCompletedAppointmentFromQueue(tx, entry, payload.amount, finishedAt);
       const shouldUpdateClientTotals = entry.appointment?.status !== AppointmentStatus.COMPLETED;
