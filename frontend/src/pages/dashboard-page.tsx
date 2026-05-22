@@ -145,6 +145,8 @@ export function DashboardPage() {
     link.click();
     URL.revokeObjectURL(url);
   }
+
+  async function openCashClosing() {
     setCashClosingOpen(true);
     await loadCashClosing(cashClosingDate);
   }
