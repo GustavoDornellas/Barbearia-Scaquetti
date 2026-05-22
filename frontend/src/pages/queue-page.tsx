@@ -48,6 +48,9 @@ export function QueuePage() {
   });
   const [newStyleInput, setNewStyleInput] = useState("");
   const [showNewStyleInput, setShowNewStyleInput] = useState(false);
+  const [editingStyles, setEditingStyles] = useState(false);
+  const [editStyleTarget, setEditStyleTarget] = useState<string | null>(null);
+  const [editStyleValue, setEditStyleValue] = useState("");
   const [summary, setSummary] = useState({
     attendedToday: 0,
     revenueToday: 0,
@@ -82,6 +85,22 @@ export function QueuePage() {
 
   function selectStyle(style: string) {
     setForm({ ...form, serviceLabel: style });
+  }
+
+  function deleteStyle(style: string) {
+    const updated = savedStyles.filter((s) => s !== style);
+    saveStyles(updated);
+    if (form.serviceLabel === style) setForm({ ...form, serviceLabel: "" });
+  }
+
+  function confirmEditStyle(oldStyle: string) {
+    const trimmed = editStyleValue.trim();
+    if (!trimmed || trimmed === oldStyle) { setEditStyleTarget(null); setEditStyleValue(""); return; }
+    const updated = savedStyles.map((s) => s === oldStyle ? trimmed : s);
+    saveStyles(updated);
+    if (form.serviceLabel === oldStyle) setForm({ ...form, serviceLabel: trimmed });
+    setEditStyleTarget(null);
+    setEditStyleValue("");
   }
 
   function formatQueueTime(value: string) {
@@ -461,31 +480,70 @@ export function QueuePage() {
             </select>
 
             <div className="mt-3">
-              <p className="mb-2 text-xs font-bold uppercase tracking-[0.22em] text-gold/80">Estilo do corte</p>
-              <div className="flex flex-wrap gap-2">
-                {savedStyles.map((style) => (
-                  <button
-                    key={style}
-                    type="button"
-                    onClick={() => selectStyle(style)}
-                    className={`rounded-2xl border px-3 py-2 text-sm transition-colors ${
-                      form.serviceLabel === style
-                        ? "border-gold bg-gold/10 text-gold"
-                        : "border-border bg-background text-muted hover:border-gold/50"
-                    }`}
-                  >
-                    {style}
-                  </button>
-                ))}
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-gold/80">Estilo do corte</p>
                 <button
                   type="button"
-                  onClick={() => setShowNewStyleInput(!showNewStyleInput)}
-                  className="rounded-2xl border border-dashed border-border bg-background px-3 py-2 text-sm text-muted hover:border-gold/50"
+                  onClick={() => setEditingStyles(!editingStyles)}
+                  className="text-xs text-muted hover:text-text transition-colors"
                 >
-                  + Novo estilo
+                  {editingStyles ? "Concluir" : "Editar estilos"}
                 </button>
               </div>
-              {showNewStyleInput && (
+              <div className="flex flex-wrap gap-2">
+                {savedStyles.map((style) => (
+                  <div key={style} className="relative flex items-center">
+                    {editingStyles ? (
+                      <div className="flex items-center gap-1 rounded-2xl border border-border bg-background px-3 py-2">
+                        {editStyleTarget === style ? (
+                          <>
+                            <input
+                              value={editStyleValue}
+                              onChange={(e) => setEditStyleValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { e.preventDefault(); confirmEditStyle(style); }
+                                if (e.key === "Escape") { setEditStyleTarget(null); setEditStyleValue(""); }
+                              }}
+                              className="w-28 bg-transparent text-sm outline-none"
+                              autoFocus
+                            />
+                            <button type="button" onClick={() => confirmEditStyle(style)} className="text-xs text-gold hover:text-gold/70">✓</button>
+                            <button type="button" onClick={() => { setEditStyleTarget(null); setEditStyleValue(""); }} className="text-xs text-muted hover:text-text">✕</button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-sm text-muted">{style}</span>
+                            <button type="button" onClick={() => { setEditStyleTarget(style); setEditStyleValue(style); }} className="ml-2 text-xs text-muted hover:text-gold">✏</button>
+                            <button type="button" onClick={() => deleteStyle(style)} className="ml-1 text-xs text-muted hover:text-red-400">✕</button>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => selectStyle(style)}
+                        className={`rounded-2xl border px-3 py-2 text-sm transition-colors ${
+                          form.serviceLabel === style
+                            ? "border-gold bg-gold/10 text-gold"
+                            : "border-border bg-background text-muted hover:border-gold/50"
+                        }`}
+                      >
+                        {style}
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {!editingStyles && (
+                  <button
+                    type="button"
+                    onClick={() => setShowNewStyleInput(!showNewStyleInput)}
+                    className="rounded-2xl border border-dashed border-border bg-background px-3 py-2 text-sm text-muted hover:border-gold/50"
+                  >
+                    + Novo estilo
+                  </button>
+                )}
+              </div>
+              {showNewStyleInput && !editingStyles && (
                 <div className="mt-2 flex gap-2">
                   <input
                     value={newStyleInput}
@@ -499,7 +557,7 @@ export function QueuePage() {
                   <Button type="button" variant="secondary" onClick={() => { setShowNewStyleInput(false); setNewStyleInput(""); }}>Fechar</Button>
                 </div>
               )}
-              {form.serviceLabel ? (
+              {form.serviceLabel && !editingStyles ? (
                 <p className="mt-2 text-xs text-muted">Selecionado: <span className="text-gold font-semibold">{form.serviceLabel}</span></p>
               ) : null}
             </div>
