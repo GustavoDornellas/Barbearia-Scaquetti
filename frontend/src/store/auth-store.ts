@@ -34,8 +34,25 @@ function persistUser(user: User | null) {
     sessionStorage.setItem("authUser", JSON.stringify(user));
     return;
   }
-
   sessionStorage.removeItem("authUser");
+}
+
+export function getAccessToken(): string | null {
+  return localStorage.getItem("accessToken");
+}
+
+export function getRefreshToken(): string | null {
+  return localStorage.getItem("refreshToken");
+}
+
+function persistTokens(accessToken: string, refreshToken: string) {
+  localStorage.setItem("accessToken", accessToken);
+  localStorage.setItem("refreshToken", refreshToken);
+}
+
+function clearTokens() {
+  localStorage.removeItem("accessToken");
+  localStorage.removeItem("refreshToken");
 }
 
 const storedUser = getStoredUser();
@@ -46,6 +63,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   loading: false,
   login: async (email, password) => {
     localStorage.removeItem("csrfToken");
+    clearTokens();
     persistUser(null);
     set({ user: null, isAuthenticated: false });
 
@@ -56,11 +74,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     const response = await api.post("/auth/login", { email, password }, {
       headers: { "X-CSRF-Token": csrfToken }
     });
-    persistUser(response.data.data.user);
-    set({
-      user: response.data.data.user,
-      isAuthenticated: true
-    });
+
+    const { user, accessToken, refreshToken } = response.data.data;
+    persistTokens(accessToken, refreshToken);
+    persistUser(user);
+    set({ user, isAuthenticated: true });
   },
   hydrate: async () => {
     const current = useAuthStore.getState();
@@ -95,6 +113,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     await api.post("/auth/logout");
     localStorage.removeItem("csrfToken");
+    clearTokens();
     persistUser(null);
     set({ user: null, isAuthenticated: false });
   }

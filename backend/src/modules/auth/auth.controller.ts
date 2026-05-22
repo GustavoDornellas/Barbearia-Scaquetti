@@ -23,19 +23,31 @@ export class AuthController {
   async login(@Body(new ZodValidationPipe(loginSchema)) body: unknown, @Res({ passthrough: true }) response: Response) {
     const payload = await this.authService.login(body as never);
     this.attachAuthCookies(response, payload.accessToken, payload.refreshToken, payload.accessMaxAge, payload.refreshMaxAge);
-    return { user: payload.user };
+    return {
+      user: payload.user,
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken,
+      accessMaxAge: payload.accessMaxAge,
+      refreshMaxAge: payload.refreshMaxAge
+    };
   }
 
   @Post("refresh")
   async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
-    const token = request.cookies?.refreshToken;
+    const token = request.cookies?.refreshToken ?? (request.headers["x-refresh-token"] as string | undefined);
     if (!token) {
       throw new ForbiddenException("Refresh token ausente");
     }
 
     const payload = await this.authService.refresh(token);
     this.attachAuthCookies(response, payload.accessToken, payload.refreshToken, payload.accessMaxAge, payload.refreshMaxAge);
-    return { user: payload.user };
+    return {
+      user: payload.user,
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken,
+      accessMaxAge: payload.accessMaxAge,
+      refreshMaxAge: payload.refreshMaxAge
+    };
   }
 
   @UseGuards(JwtAuthGuard)

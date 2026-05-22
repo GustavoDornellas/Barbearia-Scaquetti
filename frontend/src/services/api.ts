@@ -1,5 +1,6 @@
 import axios from "axios";
 import { useToastStore } from "../store/toast-store";
+import { getAccessToken, getRefreshToken } from "../store/auth-store";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
 
@@ -27,9 +28,14 @@ async function refreshCsrfToken() {
 
 api.interceptors.request.use((config) => {
   const csrf = localStorage.getItem("csrfToken");
-
   if (csrf) {
     config.headers["X-CSRF-Token"] = csrf;
+  }
+
+  // Envia Bearer token no header — funciona em Safari/iOS sem depender de cookies
+  const accessToken = getAccessToken();
+  if (accessToken) {
+    config.headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
   return config;
@@ -47,18 +53,29 @@ api.interceptors.response.use(
 
     // Se o próprio refresh falhou com 403, sessão expirou — redireciona para login
     if (status === 403 && original?.url?.includes("/auth/refresh")) {
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
       useToastStore.getState().notify("Sessão expirada. Entre de novo.", "error");
       window.location.href = "/login";
       throw error;
     }
 
-    // 401 em qualquer rota que não seja login/refresh — tenta renovar o token
+    // 401 — tenta renovar o token usando refreshToken do localStorage
     if (status === 401 && !original._retry && !original.url?.includes("/auth/login") && !original.url?.includes("/auth/refresh")) {
       original._retry = true;
       try {
-        await api.post("/auth/refresh");
+        const refreshToken = getRefreshToken();
+        const refreshResponse = await api.post("/auth/refresh", {}, {
+          headers: refreshToken ? { "X-Refresh-Token": refreshToken } : {}
+        });
+        const { accessToken: newAccess, refreshToken: newRefresh } = refreshResponse.data.data;
+        if (newAccess) localStorage.setItem("accessToken", newAccess);
+        if (newRefresh) localStorage.setItem("refreshToken", newRefresh);
+        original.headers["Authorization"] = `Bearer ${newAccess}`;
         return api(original);
       } catch {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
         useToastStore.getState().notify("Entre de novo para continuar.", "error");
         window.location.href = "/login";
       }
@@ -73,7 +90,6 @@ api.interceptors.response.use(
         original.headers["X-CSRF-Token"] = csrfToken;
         return api(original);
       } catch {
-        // Se falhar, redireciona para login se não estiver nele
         if (!original?.url?.includes("/auth/login")) {
           useToastStore.getState().notify("Sessão expirada. Entre de novo.", "error");
           window.location.href = "/login";
